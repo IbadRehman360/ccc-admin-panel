@@ -1,6 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  Search, Eye, Users, TrendingUp, CheckCircle, Sliders,
+  Loader2, Save, RotateCcw,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -10,836 +14,400 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/layout/UserAvatar';
-import { 
-  Eye,
-  User,
-  Building,
-  Users,
-  TrendingUp,
-  CheckCircle,
-  Search,
-  Sliders
-} from 'lucide-react';
+import {
+  useListMatchingUsersQuery,
+  useGetMatchingStatsQuery,
+  useGetUserPreferencesQuery,
+  useGetPreferenceWeightsQuery,
+  useUpdatePreferenceWeightsMutation,
+  type MatchingUserRow,
+} from '@/store/api/matchingApi';
 
-interface UserPreferences {
-  socialEnvironmental?: string;
-  rightsAdvocacy?: string;
-  culturalDemographic?: string;
-  lifestyle?: string;
-  business?: string;
-  political?: string;
-  gunControl?: string;
-}
+const formatDate = (iso: string | null) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+  });
+};
 
-interface UserWithPreferences {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  accountType: 'User' | 'Business';
-  profileCompletion: number;
-  preferencesSet: boolean;
-  preferencesCount: number;
-  preferences: UserPreferences;
-  joinedDate: string;
-  lastActive: string;
-  location: string;
-}
-
-const usersWithPreferences: UserWithPreferences[] = [
-  {
-    id: 'U12345',
-    name: 'Sarah Johnson',
-    email: 'sarah.j@email.com',
-    phone: '+1 (555) 123-4567',
-    accountType: 'User',
-    profileCompletion: 95,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'Progressive',
-      rightsAdvocacy: 'Strong Support',
-      culturalDemographic: 'Diverse',
-      lifestyle: 'Active & Health-Conscious',
-      business: 'Entrepreneurial',
-      political: 'Liberal',
-      gunControl: 'Support Regulation'
-    },
-    joinedDate: '2025-06-15T00:00:00',
-    lastActive: '2026-03-03T10:30:00',
-    location: 'San Francisco, CA'
-  },
-  {
-    id: 'B23456',
-    name: 'Tech Innovations Inc',
-    email: 'contact@techinnovations.com',
-    phone: '+1 (555) 234-5678',
-    accountType: 'Business',
-    profileCompletion: 100,
-    preferencesSet: true,
-    preferencesCount: 6,
-    preferences: {
-      socialEnvironmental: 'Eco-Friendly',
-      rightsAdvocacy: 'Inclusive Workplace',
-      culturalDemographic: 'Global Team',
-      lifestyle: 'Work-Life Balance',
-      business: 'Innovation-Driven',
-      political: 'Moderate'
-    },
-    joinedDate: '2025-08-20T00:00:00',
-    lastActive: '2026-03-03T10:15:00',
-    location: 'San Francisco, CA'
-  },
-  {
-    id: 'U34567',
-    name: 'Emily Rodriguez',
-    email: 'emily.r@email.com',
-    phone: '+1 (555) 345-6789',
-    accountType: 'User',
-    profileCompletion: 88,
-    preferencesSet: true,
-    preferencesCount: 6,
-    preferences: {
-      socialEnvironmental: 'Environmental Advocate',
-      rightsAdvocacy: 'Social Justice',
-      culturalDemographic: 'Multicultural',
-      lifestyle: 'Community-Oriented',
-      business: 'Social Enterprise',
-      political: 'Progressive'
-    },
-    joinedDate: '2025-09-10T00:00:00',
-    lastActive: '2026-03-03T09:45:00',
-    location: 'Los Angeles, CA'
-  },
-  {
-    id: 'U45678',
-    name: 'David Thompson',
-    email: 'david.t@email.com',
-    phone: '+1 (555) 456-7890',
-    accountType: 'User',
-    profileCompletion: 92,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'Conservation',
-      rightsAdvocacy: 'Civil Liberties',
-      culturalDemographic: 'Traditional Values',
-      lifestyle: 'Outdoor Enthusiast',
-      business: 'Small Business Owner',
-      political: 'Conservative',
-      gunControl: 'Second Amendment Support'
-    },
-    joinedDate: '2025-07-22T00:00:00',
-    lastActive: '2026-03-03T09:30:00',
-    location: 'Austin, TX'
-  },
-  {
-    id: 'B56789',
-    name: 'Green Earth Solutions',
-    email: 'info@greenearthsolutions.com',
-    phone: '+1 (555) 567-8901',
-    accountType: 'Business',
-    profileCompletion: 96,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'Sustainability First',
-      rightsAdvocacy: 'Environmental Justice',
-      culturalDemographic: 'Community-Focused',
-      lifestyle: 'Green Living',
-      business: 'B-Corporation',
-      political: 'Non-Partisan',
-      gunControl: 'Support Regulation'
-    },
-    joinedDate: '2025-05-30T00:00:00',
-    lastActive: '2026-03-03T09:00:00',
-    location: 'Portland, OR'
-  },
-  {
-    id: 'U67890',
-    name: 'James Anderson',
-    email: 'james.a@email.com',
-    phone: '+1 (555) 678-9012',
-    accountType: 'User',
-    profileCompletion: 85,
-    preferencesSet: true,
-    preferencesCount: 5,
-    preferences: {
-      socialEnvironmental: 'Moderate',
-      rightsAdvocacy: 'Individual Freedom',
-      culturalDemographic: 'American Values',
-      lifestyle: 'Traditional',
-      business: 'Free Market'
-    },
-    joinedDate: '2025-10-05T00:00:00',
-    lastActive: '2026-03-03T08:45:00',
-    location: 'Dallas, TX'
-  },
-  {
-    id: 'U78901',
-    name: 'Maria Garcia',
-    email: 'maria.g@email.com',
-    phone: '+1 (555) 789-0123',
-    accountType: 'User',
-    profileCompletion: 90,
-    preferencesSet: true,
-    preferencesCount: 6,
-    preferences: {
-      socialEnvironmental: 'Climate Activist',
-      rightsAdvocacy: 'Human Rights',
-      culturalDemographic: 'Hispanic Heritage',
-      lifestyle: 'Family-Oriented',
-      business: 'Local Business Support',
-      political: 'Democrat'
-    },
-    joinedDate: '2025-11-12T00:00:00',
-    lastActive: '2026-03-03T08:30:00',
-    location: 'Miami, FL'
-  },
-  {
-    id: 'B89012',
-    name: 'Diversity Consulting Group',
-    email: 'contact@diversityconsulting.com',
-    phone: '+1 (555) 890-1234',
-    accountType: 'Business',
-    profileCompletion: 100,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'DEI Focused',
-      rightsAdvocacy: 'Equality Champion',
-      culturalDemographic: 'Inclusive',
-      lifestyle: 'Collaborative',
-      business: 'Purpose-Driven',
-      political: 'Non-Partisan',
-      gunControl: 'Neutral'
-    },
-    joinedDate: '2025-04-18T00:00:00',
-    lastActive: '2026-03-03T08:15:00',
-    location: 'New York, NY'
-  },
-  {
-    id: 'U90123',
-    name: 'Jennifer Lee',
-    email: 'jennifer.l@email.com',
-    phone: '+1 (555) 901-2345',
-    accountType: 'User',
-    profileCompletion: 94,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'Green Advocate',
-      rightsAdvocacy: 'LGBTQ+ Ally',
-      culturalDemographic: 'Asian-American',
-      lifestyle: 'Tech-Savvy',
-      business: 'Startup Culture',
-      political: 'Independent',
-      gunControl: 'Support Regulation'
-    },
-    joinedDate: '2025-08-25T00:00:00',
-    lastActive: '2026-03-03T08:00:00',
-    location: 'Seattle, WA'
-  },
-  {
-    id: 'U01234',
-    name: 'Alex Martinez',
-    email: 'alex.m@email.com',
-    phone: '+1 (555) 012-3456',
-    accountType: 'User',
-    profileCompletion: 87,
-    preferencesSet: true,
-    preferencesCount: 6,
-    preferences: {
-      socialEnvironmental: 'Urban Living',
-      rightsAdvocacy: 'Education Equity',
-      culturalDemographic: 'Latino Community',
-      lifestyle: 'Fitness & Wellness',
-      business: 'Freelancer',
-      political: 'Moderate'
-    },
-    joinedDate: '2025-12-01T00:00:00',
-    lastActive: '2026-03-03T07:45:00',
-    location: 'Denver, CO'
-  },
-  {
-    id: 'B11223',
-    name: 'Sustainable Foods Co',
-    email: 'info@sustainablefoods.com',
-    phone: '+1 (555) 112-2334',
-    accountType: 'Business',
-    profileCompletion: 98,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'Organic & Local',
-      rightsAdvocacy: 'Fair Trade',
-      culturalDemographic: 'Farm-to-Table',
-      lifestyle: 'Healthy Living',
-      business: 'Ethical Sourcing',
-      political: 'Progressive',
-      gunControl: 'Support Regulation'
-    },
-    joinedDate: '2025-03-14T00:00:00',
-    lastActive: '2026-03-03T07:30:00',
-    location: 'San Francisco, CA'
-  },
-  {
-    id: 'U22334',
-    name: 'Amanda Wilson',
-    email: 'amanda.w@email.com',
-    phone: '+1 (555) 223-3445',
-    accountType: 'User',
-    profileCompletion: 91,
-    preferencesSet: true,
-    preferencesCount: 6,
-    preferences: {
-      socialEnvironmental: 'Climate Conscious',
-      rightsAdvocacy: 'Women\'s Rights',
-      culturalDemographic: 'Feminist',
-      lifestyle: 'Professional',
-      business: 'Corporate',
-      political: 'Liberal'
-    },
-    joinedDate: '2025-07-08T00:00:00',
-    lastActive: '2026-03-03T07:15:00',
-    location: 'Boston, MA'
-  },
-  {
-    id: 'U33445',
-    name: 'Christopher Davis',
-    email: 'chris.d@email.com',
-    phone: '+1 (555) 334-4556',
-    accountType: 'User',
-    profileCompletion: 89,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'Pragmatic',
-      rightsAdvocacy: 'States Rights',
-      culturalDemographic: 'Patriotic',
-      lifestyle: 'Sports Enthusiast',
-      business: 'Capitalist',
-      political: 'Republican',
-      gunControl: 'Second Amendment'
-    },
-    joinedDate: '2025-09-19T00:00:00',
-    lastActive: '2026-03-03T07:00:00',
-    location: 'Nashville, TN'
-  },
-  {
-    id: 'B44556',
-    name: 'Community Health Center',
-    email: 'info@communityhealthcenter.org',
-    phone: '+1 (555) 445-5667',
-    accountType: 'Business',
-    profileCompletion: 100,
-    preferencesSet: true,
-    preferencesCount: 6,
-    preferences: {
-      socialEnvironmental: 'Public Health',
-      rightsAdvocacy: 'Healthcare Access',
-      culturalDemographic: 'Underserved Communities',
-      lifestyle: 'Wellness',
-      business: 'Non-Profit',
-      political: 'Non-Partisan'
-    },
-    joinedDate: '2025-06-22T00:00:00',
-    lastActive: '2026-03-03T06:45:00',
-    location: 'Chicago, IL'
-  },
-  {
-    id: 'U55667',
-    name: 'Daniel Taylor',
-    email: 'daniel.t@email.com',
-    phone: '+1 (555) 556-6778',
-    accountType: 'User',
-    profileCompletion: 93,
-    preferencesSet: true,
-    preferencesCount: 7,
-    preferences: {
-      socialEnvironmental: 'Renewable Energy',
-      rightsAdvocacy: 'Tech Privacy',
-      culturalDemographic: 'Digital Native',
-      lifestyle: 'Minimalist',
-      business: 'Tech Industry',
-      political: 'Libertarian',
-      gunControl: 'Neutral'
-    },
-    joinedDate: '2025-10-30T00:00:00',
-    lastActive: '2026-03-03T06:30:00',
-    location: 'San Jose, CA'
-  }
-];
+const extractError = (err: unknown) => {
+  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
+  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
+};
 
 export default function MatchingEnginePage() {
-  const [allUsers] = useState<UserWithPreferences[]>(usersWithPreferences);
-  const [selectedUser, setSelectedUser] = useState<UserWithPreferences | null>(null);
-  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterAccountType, setFilterAccountType] = useState<string>('All');
-  const [activeTab, setActiveTab] = useState('all');
-
-  // Calculate stats
-  const totalWithPreferences = allUsers.filter(u => u.preferencesSet).length;
-  const regularUsersWithPrefs = allUsers.filter(u => u.preferencesSet && u.accountType === 'User').length;
-  const businessesWithPrefs = allUsers.filter(u => u.preferencesSet && u.accountType === 'Business').length;
-  const avgProfileCompletion = Math.round(
-    allUsers.filter(u => u.preferencesSet).reduce((sum, u) => sum + u.profileCompletion, 0) / totalWithPreferences
-  );
-  const completeProfiles = allUsers.filter(u => u.preferencesSet && u.profileCompletion >= 90).length;
-
-  // Filter users
-  const filteredUsers = allUsers.filter(user => {
-    if (!user.preferencesSet) return false;
-    
-    const accountTypeMatch = filterAccountType === 'All' || user.accountType === filterAccountType;
-    const searchMatch = searchQuery === '' || 
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.location.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return accountTypeMatch && searchMatch;
-  });
-
-  // Separate by account type
-  const regularUsers = filteredUsers.filter(u => u.accountType === 'User');
-  const businesses = filteredUsers.filter(u => u.accountType === 'Business');
-
-  const handleViewDetails = (user: UserWithPreferences) => {
-    setSelectedUser(user);
-    setShowDetailsDialog(true);
-    
-    // Log view action
-    console.log('User Preferences Viewed:', {
-      userId: user.id,
-      userName: user.name,
-      accountType: user.accountType,
-      viewedBy: 'Current Admin',
-      timestamp: new Date().toISOString()
-    });
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric'
-    });
-  };
-
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getCompletionColor = (completion: number) => {
-    if (completion >= 90) return 'text-green-600';
-    if (completion >= 70) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  const UsersTable = ({ users, type }: { users: UserWithPreferences[], type: string }) => (
-    <div className="border rounded-lg overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-gray-50">
-            <TableHead className="font-semibold">{type === 'User' ? 'User' : 'Business'}</TableHead>
-            <TableHead className="font-semibold">Contact</TableHead>
-            <TableHead className="font-semibold">Location</TableHead>
-            <TableHead className="font-semibold">Profile Completion</TableHead>
-            <TableHead className="font-semibold">Preferences Set</TableHead>
-            <TableHead className="font-semibold">Last Active</TableHead>
-            <TableHead className="text-right font-semibold">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                No {type === 'User' ? 'users' : 'businesses'} found with preferences set
-              </TableCell>
-            </TableRow>
-          ) : (
-            users.map((user) => (
-              <TableRow key={user.id} className="hover:bg-gray-50">
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <UserAvatar name={user.name} size="md" />
-                    <div>
-                      <div className="font-medium text-gray-900">{user.name}</div>
-                      <div className="text-xs text-gray-400">{user.id}</div>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div>
-                    <div className="text-sm text-gray-900">{user.email}</div>
-                    <div className="text-xs text-gray-500">{user.phone}</div>
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm text-gray-600">
-                  {user.location}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <div className="w-16 bg-gray-200 rounded-full h-2">
-                      <div 
-                        className={`h-2 rounded-full ${user.profileCompletion >= 90 ? 'bg-green-500' : user.profileCompletion >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                        style={{ width: `${user.profileCompletion}%` }}
-                      />
-                    </div>
-                    <span className={`text-sm font-medium ${getCompletionColor(user.profileCompletion)}`}>
-                      {user.profileCompletion}%
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge className="bg-green-100 text-green-800">
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    {user.preferencesCount}/7 Categories
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-sm text-gray-600">
-                  {formatDateTime(user.lastActive)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => handleViewDetails(user)}
-                  >
-                    <Eye className="w-4 h-4 mr-1" />
-                    View
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
-  );
-
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">User Preferences</h1>
-        <p className="text-gray-600 mt-1">View users and businesses who have set their preferences</p>
+        <h1 className="text-3xl font-bold text-gray-900">Matching Engine</h1>
+        <p className="text-gray-600 mt-2">Tune weights and inspect user preferences</p>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-[#195440]">{totalWithPreferences}</div>
-                <p className="text-sm text-gray-600 mt-1">Total with Preferences</p>
-              </div>
-              <Sliders className="w-8 h-8 text-[#195440]" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-blue-600">{regularUsersWithPrefs}</div>
-                <p className="text-sm text-gray-600 mt-1">Users</p>
-              </div>
-              <User className="w-8 h-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-purple-600">{businessesWithPrefs}</div>
-                <p className="text-sm text-gray-600 mt-1">Businesses</p>
-              </div>
-              <Building className="w-8 h-8 text-purple-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-green-600">{avgProfileCompletion}%</div>
-                <p className="text-sm text-gray-600 mt-1">Avg Profile Completion</p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-green-600">{completeProfiles}</div>
-                <p className="text-sm text-gray-600 mt-1">90%+ Complete</p>
-              </div>
-              <CheckCircle className="w-8 h-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <MatchingStatsRow />
 
-      {/* Main Content */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            Users & Businesses with Preferences
-          </CardTitle>
-          <p className="text-sm text-gray-600 mt-2">
-            Monitor accounts that have completed their preference settings
-          </p>
-        </CardHeader>
-        <CardContent>
-          {/* Filters */}
-          <div className="space-y-4 mb-6">
-            <div className="flex flex-wrap gap-4 items-end">
-              {/* Search */}
-              <div className="flex-1 min-w-[250px]">
-                <Label>Search</Label>
-                <div className="relative mt-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    placeholder="Search by name, email, ID, or location..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
+      <Tabs defaultValue="users" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="users">
+            <Users className="w-4 h-4 mr-2" />Users & Preferences
+          </TabsTrigger>
+          <TabsTrigger value="weights">
+            <Sliders className="w-4 h-4 mr-2" />Preference Weights
+          </TabsTrigger>
+        </TabsList>
 
-              {/* Account Type Filter */}
-              <div className="w-[180px]">
-                <Label>Account Type</Label>
-                <Select value={filterAccountType} onValueChange={setFilterAccountType}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="All">All Types</SelectItem>
-                    <SelectItem value="User">Users Only</SelectItem>
-                    <SelectItem value="Business">Businesses Only</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+        <TabsContent value="users"><UsersTab /></TabsContent>
+        <TabsContent value="weights"><WeightsTab /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
 
-            <div className="text-sm text-gray-600">
-              Showing {filteredUsers.length} of {totalWithPreferences} accounts with preferences
+function MatchingStatsRow() {
+  const { data: stats } = useGetMatchingStatsQuery();
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <StatCard label="Total Accounts" value={stats?.total} icon={Users} color="text-gray-900" />
+      <StatCard label="With Preferences" value={stats?.total_with_prefs} icon={CheckCircle} color="text-green-600" />
+      <StatCard label="Without Preferences" value={stats?.total_without_prefs} icon={Users} color="text-gray-500" />
+      <StatCard label="Users Onboarded" value={stats?.users_with_prefs} icon={Users} color="text-blue-600" />
+      <StatCard label="Businesses Onboarded" value={stats?.businesses_with_prefs} icon={TrendingUp} color="text-[#E1B047]" />
+    </div>
+  );
+}
+
+function UsersTab() {
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [accountType, setAccountType] = useState<'all' | 'USER' | 'BUSINESS'>('all');
+  const [prefsFilter, setPrefsFilter] = useState<'all' | 'true' | 'false'>('all');
+  const [page, setPage] = useState(1);
+
+  const { data: list, isFetching } = useListMatchingUsersQuery({
+    search, account_type: accountType, preferences_set: prefsFilter, page, limit: 25,
+  });
+
+  const [showPrefs, setShowPrefs] = useState(false);
+  const [selected, setSelected] = useState<MatchingUserRow | null>(null);
+
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearch(searchInput);
+    setPage(1);
+  };
+
+  const rows = list?.data ?? [];
+  const totalPages = list?.pagination.total_pages ?? 1;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Users & Their Preferences</CardTitle>
+        {isFetching && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submitSearch} className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
+          <div className="md:col-span-2 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search by name, email..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={accountType} onValueChange={(v) => { setAccountType(v as typeof accountType); setPage(1); }}>
+            <SelectTrigger><SelectValue placeholder="Account Type" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Accounts</SelectItem>
+              <SelectItem value="USER">Users</SelectItem>
+              <SelectItem value="BUSINESS">Businesses</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={prefsFilter} onValueChange={(v) => { setPrefsFilter(v as typeof prefsFilter); setPage(1); }}>
+            <SelectTrigger><SelectValue placeholder="Preferences" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="true">Preferences Set</SelectItem>
+              <SelectItem value="false">Not Set</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button type="submit" className="bg-[#195440] hover:bg-[#195440]/90">Search</Button>
+        </form>
+
+        <div className="border rounded-lg overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Profile</TableHead>
+                <TableHead>Preferences</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Joined</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-500">No users found</TableCell></TableRow>
+              ) : rows.map((u) => (
+                <TableRow key={u.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <UserAvatar name={u.name} size="sm" />
+                      <div className="text-sm">
+                        <div className="font-medium">{u.name}</div>
+                        <div className="text-xs text-gray-500">{u.email}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={u.account_type === 'Business' ? 'default' : 'outline'} className={u.account_type === 'Business' ? 'bg-[#195440]' : ''}>
+                      {u.account_type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#195440]" style={{ width: `${u.profile_completion}%` }}></div>
+                      </div>
+                      <span className="text-xs text-gray-600">{u.profile_completion}%</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {u.preferences_set
+                      ? <Badge className="bg-green-600"><CheckCircle className="w-3 h-3 mr-1" />{u.preferences_count} set</Badge>
+                      : <Badge variant="secondary">Not set</Badge>}
+                  </TableCell>
+                  <TableCell className="text-sm text-gray-600">{u.location || '—'}</TableCell>
+                  <TableCell className="text-sm text-gray-600">{formatDate(u.joined_date)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => { setSelected(u); setShowPrefs(true); }}>
+                      <Eye className="w-4 h-4 mr-1" />View
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        {list && (
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-sm text-gray-500">
+              Page {list.pagination.page} of {totalPages} — {list.pagination.total.toLocaleString()} total
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
             </div>
           </div>
+        )}
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="all">
-                All ({filteredUsers.length})
-              </TabsTrigger>
-              <TabsTrigger value="users">
-                Users ({regularUsers.length})
-              </TabsTrigger>
-              <TabsTrigger value="businesses">
-                Businesses ({businesses.length})
-              </TabsTrigger>
-            </TabsList>
+        <Dialog open={showPrefs} onOpenChange={setShowPrefs}>
+          <DialogContent className="w-[95vw] max-w-2xl max-h-[85vh] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>{selected?.name}</DialogTitle>
+              <DialogDescription>
+                {selected && `${selected.email} · ${selected.account_type}`}
+              </DialogDescription>
+            </DialogHeader>
+            {selected && <PreferencesView userId={selected.id} />}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowPrefs(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
 
-            <TabsContent value="all">
-              <UsersTable users={filteredUsers} type="All" />
-            </TabsContent>
+function PreferencesView({ userId }: { userId: string }) {
+  const { data, isLoading } = useGetUserPreferencesQuery(userId);
+  if (isLoading || !data) {
+    return <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+  }
 
-            <TabsContent value="users">
-              <UsersTable users={regularUsers} type="User" />
-            </TabsContent>
+  return (
+    <div className="overflow-y-auto max-h-[calc(85vh-180px)] pb-6 px-4 sm:px-6 space-y-4 pt-4">
+      <div className="flex items-center gap-2">
+        {data.is_preference_completed
+          ? <Badge className="bg-green-600">Onboarded</Badge>
+          : <Badge variant="secondary">Pending Onboarding</Badge>}
+        <span className="text-sm text-gray-500">·</span>
+        <span className="text-sm text-gray-600">{data.preferences.length} answer{data.preferences.length !== 1 && 's'}</span>
+      </div>
 
-            <TabsContent value="businesses">
-              <UsersTable users={businesses} type="Business" />
-            </TabsContent>
-          </Tabs>
+      <Separator />
+
+      {data.preferences.length === 0 ? (
+        <div className="text-center py-6 text-gray-500">No preference answers submitted yet.</div>
+      ) : data.preferences.map((p) => (
+        <div key={p.question_number} className="border rounded-lg p-3 bg-gray-50">
+          <div className="text-xs text-gray-500 mb-2">Question {p.question_number}</div>
+          <div className="flex flex-wrap gap-2">
+            {p.selected_options.map((opt, i) => (
+              <Badge key={i} variant="outline" className="text-xs">{opt}</Badge>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WeightsTab() {
+  const { data: weights, isLoading, refetch } = useGetPreferenceWeightsQuery();
+  const [update, { isLoading: saving }] = useUpdatePreferenceWeightsMutation();
+
+  const [draft, setDraft] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (weights) {
+      const initial: Record<string, number> = {};
+      for (const w of weights) initial[w.question_id] = w.weight;
+      setDraft(initial);
+    }
+  }, [weights]);
+
+  if (isLoading || !weights) {
+    return (
+      <Card>
+        <CardContent className="py-12 flex justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
         </CardContent>
       </Card>
+    );
+  }
 
-      {/* View Details Dialog */}
-      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-        <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sliders className="w-5 h-5" />
-              Preference Details
-            </DialogTitle>
-            <DialogDescription>
-              Complete preference information for this account
-            </DialogDescription>
-          </DialogHeader>
+  const dirty = weights.some((w) => Math.abs((draft[w.question_id] ?? 0) - w.weight) > 0.0001);
+  const total = Object.values(draft).reduce((s, v) => s + (Number(v) || 0), 0);
 
-          {selectedUser && (
-            <div className="space-y-6 px-6">
-              {/* User/Business Header */}
-              <div className="p-4 bg-gray-50 rounded-lg border">
-                <div className="flex items-start gap-4">
-                  <UserAvatar name={selectedUser.name} size="lg" />
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-gray-900">{selectedUser.name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{selectedUser.email}</p>
-                    <p className="text-sm text-gray-600">{selectedUser.phone}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge variant="outline" className={selectedUser.accountType === 'Business' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}>
-                        {selectedUser.accountType === 'Business' ? <Building className="w-3 h-3 mr-1" /> : <User className="w-3 h-3 mr-1" />}
-                        {selectedUser.accountType}
-                      </Badge>
-                      <Badge className="bg-green-100 text-green-800">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        {selectedUser.preferencesCount}/7 Preferences Set
-                      </Badge>
+  const handleSave = async () => {
+    setError(null);
+    try {
+      await update({
+        weights: weights.map((w) => ({
+          question_id: w.question_id,
+          weight: draft[w.question_id] ?? w.weight,
+        })),
+      }).unwrap();
+      setSavedAt(new Date().toLocaleTimeString());
+      refetch();
+    } catch (e) {
+      setError(extractError(e));
+    }
+  };
+
+  const handleReset = () => {
+    const initial: Record<string, number> = {};
+    for (const w of weights) initial[w.question_id] = w.weight;
+    setDraft(initial);
+    setError(null);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Matching v2 Preference Weights</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Each question contributes its weight to the final match score. Updating weights reloads the
+          scorer immediately. Current total: <strong>{total.toFixed(2)}</strong>
+        </p>
+
+        <div className="space-y-3">
+          {weights.map((w) => {
+            const value = draft[w.question_id] ?? w.weight;
+            const pct = total > 0 ? (value / total) * 100 : 0;
+            return (
+              <div key={w.id} className="border rounded-lg p-4 bg-gray-50">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{w.question_id}</Badge>
+                      <span className="font-medium">{w.label}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Updated {new Date(w.updated_at).toLocaleDateString()}
                     </div>
                   </div>
-                </div>
-              </div>
-
-              {/* Profile Completion */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900">Profile Completion</h4>
-                <div className="p-4 bg-gray-50 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Overall Completion</span>
-                    <span className={`text-lg font-bold ${getCompletionColor(selectedUser.profileCompletion)}`}>
-                      {selectedUser.profileCompletion}%
-                    </span>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500">% of total</div>
+                    <div className="font-bold text-[#195440]">{pct.toFixed(1)}%</div>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div 
-                      className={`h-3 rounded-full ${selectedUser.profileCompletion >= 90 ? 'bg-green-500' : selectedUser.profileCompletion >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                      style={{ width: `${selectedUser.profileCompletion}%` }}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={0}
+                    max={5}
+                    step={0.1}
+                    value={value}
+                    onChange={(e) => setDraft({ ...draft, [w.question_id]: Number(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor={`w-${w.id}`} className="sr-only">Weight</Label>
+                    <Input
+                      id={`w-${w.id}`}
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={value}
+                      onChange={(e) => setDraft({ ...draft, [w.question_id]: Number(e.target.value) })}
+                      className="w-20"
                     />
                   </div>
                 </div>
               </div>
+            );
+          })}
+        </div>
 
-              {/* Preferences */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900">Preference Categories</h4>
-                <div className="grid grid-cols-1 gap-3">
-                  {selectedUser.preferences.socialEnvironmental && (
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-green-900">🌍 Social & Environmental</span>
-                        <Badge variant="outline" className="bg-white">
-                          {selectedUser.preferences.socialEnvironmental}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                  {selectedUser.preferences.rightsAdvocacy && (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-blue-900">✊ Rights & Advocacy</span>
-                        <Badge variant="outline" className="bg-white">
-                          {selectedUser.preferences.rightsAdvocacy}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                  {selectedUser.preferences.culturalDemographic && (
-                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-purple-900">🌐 Cultural & Demographic</span>
-                        <Badge variant="outline" className="bg-white">
-                          {selectedUser.preferences.culturalDemographic}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                  {selectedUser.preferences.lifestyle && (
-                    <div className="p-3 bg-pink-50 border border-pink-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-pink-900">🎨 Lifestyle</span>
-                        <Badge variant="outline" className="bg-white">
-                          {selectedUser.preferences.lifestyle}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                  {selectedUser.preferences.business && (
-                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-yellow-900">💼 Business</span>
-                        <Badge variant="outline" className="bg-white">
-                          {selectedUser.preferences.business}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                  {selectedUser.preferences.political && (
-                    <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-indigo-900">🗳️ Political</span>
-                        <Badge variant="outline" className="bg-white">
-                          {selectedUser.preferences.political}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                  {selectedUser.preferences.gunControl && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-red-900">🔫 Gun Control</span>
-                        <Badge variant="outline" className="bg-white">
-                          {selectedUser.preferences.gunControl}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+        {error && (
+          <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
-              {/* Account Information */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900">Account Information</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">User ID</Label>
-                    <p className="font-medium mt-1">{selectedUser.id}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Location</Label>
-                    <p className="font-medium mt-1">{selectedUser.location}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Joined Date</Label>
-                    <p className="font-medium mt-1">{formatDate(selectedUser.joinedDate)}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Last Active</Label>
-                    <p className="font-medium mt-1">{formatDateTime(selectedUser.lastActive)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+        {savedAt && !dirty && (
+          <div className="rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+            Saved at {savedAt}
+          </div>
+        )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDetailsDialog(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={handleReset} disabled={!dirty || saving}>
+            <RotateCcw className="w-4 h-4 mr-2" />Reset
+          </Button>
+          <Button onClick={handleSave} disabled={!dirty || saving} className="bg-[#195440] hover:bg-[#195440]/90">
+            <Save className="w-4 h-4 mr-2" />
+            {saving ? 'Saving...' : 'Save Weights'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatCard({ label, value, icon: Icon, color }: { label: string; value?: number; icon: React.ComponentType<{ className?: string }>; color: string }) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium text-gray-600">{label}</CardTitle>
+        <Icon className={`w-5 h-5 ${color}`} />
+      </CardHeader>
+      <CardContent>
+        <div className={`text-3xl font-bold ${color}`}>{value?.toLocaleString() ?? '—'}</div>
+      </CardContent>
+    </Card>
   );
 }
