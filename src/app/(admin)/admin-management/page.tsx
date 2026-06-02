@@ -1,149 +1,177 @@
 'use client';
 
-import { useState } from 'react';
-import { Shield, UserPlus, Edit, Trash2, Search, Filter, Mail, Calendar, Lock } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  Shield, UserPlus, Edit, Trash2, Search, Filter, Mail,
+  Calendar, Lock, Unlock, Loader2,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { UserAvatar } from '@/components/layout/UserAvatar';
+import {
+  useListAdminsQuery,
+  useGetAdminStatsQuery,
+  useCreateAdminMutation,
+  useUpdateAdminMutation,
+  useSetAdminStatusMutation,
+  useDeleteAdminMutation,
+  type AdminRow,
+} from '@/store/api/adminsApi';
+import { useAppSelector } from '@/store/hooks';
 
-const adminData = [
-  {
-    id: 1,
-    name: 'John Anderson',
-    email: 'john.anderson@admin.com',
-    role: 'Super Admin',
-    status: 'Active',
-    createdDate: '2025-01-15',
-    permissions: ['Full Access']
-  },
-  {
-    id: 2,
-    name: 'Sarah Mitchell',
-    email: 'sarah.mitchell@admin.com',
-    role: 'Admin',
-    status: 'Active',
-    createdDate: '2025-03-20',
-    permissions: ['User Management', 'Business Management', 'Reports']
-  },
-  {
-    id: 3,
-    name: 'Michael Chen',
-    email: 'm.chen@admin.com',
-    role: 'Admin',
-    status: 'Active',
-    createdDate: '2025-05-10',
-    permissions: ['Content Management', 'Community Management']
-  },
-  {
-    id: 4,
-    name: 'Emily Rodriguez',
-    email: 'emily.r@admin.com',
-    role: 'Admin',
-    status: 'Inactive',
-    createdDate: '2025-07-22',
-    permissions: ['Ad Management', 'Job Management']
-  },
-  {
-    id: 5,
-    name: 'David Thompson',
-    email: 'd.thompson@admin.com',
-    role: 'Admin',
-    status: 'Active',
-    createdDate: '2025-09-05',
-    permissions: ['Report Management', 'Notification Management']
-  },
-];
+const formatDate = (iso: string | null) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+  });
+};
 
 export default function AdminManagementPage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showRevokeDialog, setShowRevokeDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [selectedAdmin, setSelectedAdmin] = useState<any>(null);
-  const [editAdmin, setEditAdmin] = useState({
-    name: '',
-    email: '',
-    role: 'Admin',
-    permissions: [] as string[]
-  });
-  const [newAdmin, setNewAdmin] = useState({
-    name: '',
-    email: '',
-    role: 'Admin',
-    password: '',
-    permissions: [] as string[]
+  const currentAdminId = useAppSelector((s) => s.auth.admin?.id);
+
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+
+  const { data: stats } = useGetAdminStatsQuery();
+  const { data: list, isLoading, isFetching } = useListAdminsQuery({
+    search,
+    status: filterStatus,
+    page: 1,
+    limit: 50,
   });
 
-  const handleCreateAdmin = () => {
-    console.log('Creating admin:', newAdmin);
-    setShowCreateDialog(false);
-    setNewAdmin({ name: '', email: '', role: 'Admin', password: '', permissions: [] });
+  const [createAdmin, { isLoading: creating }] = useCreateAdminMutation();
+  const [updateAdmin, { isLoading: updating }] = useUpdateAdminMutation();
+  const [setStatus, { isLoading: settingStatus }] = useSetAdminStatusMutation();
+  const [deleteAdmin, { isLoading: deleting }] = useDeleteAdminMutation();
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showStatus, setShowStatus] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [selected, setSelected] = useState<AdminRow | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [newAdmin, setNewAdmin] = useState({ full_name: '', email: '', password: '' });
+  const [editAdmin, setEditAdmin] = useState({ full_name: '', email: '' });
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearch(searchInput);
   };
 
-  const handleEditAdmin = (admin: any) => {
-    setSelectedAdmin(admin);
+  const extractError = (err: unknown) => {
+    const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
+    return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
+  };
+
+  const handleCreate = async () => {
+    setError(null);
+    try {
+      await createAdmin(newAdmin).unwrap();
+      setNewAdmin({ full_name: '', email: '', password: '' });
+      setShowCreate(false);
+    } catch (e) {
+      setError(extractError(e));
+    }
+  };
+
+  const openEdit = (admin: AdminRow) => {
+    setSelected(admin);
     setEditAdmin({
-      name: admin.name,
+      full_name: admin.full_name ?? '',
       email: admin.email,
-      role: admin.role,
-      permissions: [...admin.permissions]
     });
-    setShowEditDialog(true);
+    setError(null);
+    setShowEdit(true);
   };
 
-  const handleUpdateAdmin = () => {
-    console.log('Updating admin:', selectedAdmin.id, editAdmin);
-    setShowEditDialog(false);
-    setSelectedAdmin(null);
+  const handleUpdate = async () => {
+    if (!selected) return;
+    setError(null);
+    try {
+      const body: { id: string; full_name?: string; email?: string } = {
+        id: selected.id,
+      };
+      if (editAdmin.full_name && editAdmin.full_name !== (selected.full_name ?? '')) {
+        body.full_name = editAdmin.full_name;
+      }
+      if (editAdmin.email && editAdmin.email !== selected.email) {
+        body.email = editAdmin.email;
+      }
+      if (!body.full_name && !body.email) {
+        setShowEdit(false);
+        return;
+      }
+      await updateAdmin(body).unwrap();
+      setShowEdit(false);
+      setSelected(null);
+    } catch (e) {
+      setError(extractError(e));
+    }
   };
 
-  const handleRevokeAccess = (admin: any) => {
-    setSelectedAdmin(admin);
-    setShowRevokeDialog(true);
+  const openStatus = (admin: AdminRow) => {
+    setSelected(admin);
+    setError(null);
+    setShowStatus(true);
   };
 
-  const confirmRevokeAccess = () => {
-    console.log('Revoking access for:', selectedAdmin);
-    setShowRevokeDialog(false);
-    setSelectedAdmin(null);
+  const confirmStatus = async () => {
+    if (!selected) return;
+    setError(null);
+    try {
+      await setStatus({ id: selected.id, is_blocked: !selected.is_blocked }).unwrap();
+      setShowStatus(false);
+      setSelected(null);
+    } catch (e) {
+      setError(extractError(e));
+    }
   };
 
-  const handleDeleteAdmin = (admin: any) => {
-    setSelectedAdmin(admin);
-    setShowDeleteDialog(true);
+  const openDelete = (admin: AdminRow) => {
+    setSelected(admin);
+    setError(null);
+    setShowDelete(true);
   };
 
-  const confirmDeleteAdmin = () => {
-    console.log('Deleting admin:', selectedAdmin);
-    setShowDeleteDialog(false);
-    setSelectedAdmin(null);
+  const confirmDelete = async () => {
+    if (!selected) return;
+    setError(null);
+    try {
+      await deleteAdmin(selected.id).unwrap();
+      setShowDelete(false);
+      setSelected(null);
+    } catch (e) {
+      setError(extractError(e));
+    }
   };
 
-  const filteredAdmins = adminData.filter(admin => {
-    const matchesSearch = admin.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         admin.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || admin.status.toLowerCase() === filterStatus;
-    return matchesSearch && matchesFilter;
-  });
+  const rows = useMemo(() => list?.data ?? [], [list]);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Admin Management</h1>
-          <p className="text-gray-600 mt-2">Manage admin users and their permissions</p>
+          <p className="text-gray-600 mt-2">Manage admin users and their access</p>
         </div>
         <Button
-          onClick={() => setShowCreateDialog(true)}
+          onClick={() => { setShowCreate(true); setError(null); }}
           className="bg-[#195440] hover:bg-[#195440]/90"
         >
           <UserPlus className="w-4 h-4 mr-2" />
@@ -151,7 +179,6 @@ export default function AdminManagementPage() {
         </Button>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -159,60 +186,59 @@ export default function AdminManagementPage() {
             <Shield className="w-5 h-5 text-[#195440]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">5</div>
-            <p className="text-sm text-gray-600 mt-1">1 Super Admin, 4 Admins</p>
+            <div className="text-3xl font-bold text-gray-900">{stats?.total ?? '—'}</div>
+            <p className="text-sm text-gray-600 mt-1">All admin accounts</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Active Admins</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Active</CardTitle>
             <Shield className="w-5 h-5 text-[#E1B047]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">4</div>
+            <div className="text-3xl font-bold text-gray-900">{stats?.active ?? '—'}</div>
             <p className="text-sm text-gray-600 mt-1">Currently Active</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Inactive Admins</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Inactive</CardTitle>
             <Shield className="w-5 h-5 text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">1</div>
-            <p className="text-sm text-gray-600 mt-1">Suspended or Inactive</p>
+            <div className="text-3xl font-bold text-gray-900">{stats?.inactive ?? '—'}</div>
+            <p className="text-sm text-gray-600 mt-1">Deactivated</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Recent Logins</CardTitle>
             <Calendar className="w-5 h-5 text-[#195440]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">3</div>
+            <div className="text-3xl font-bold text-gray-900">{stats?.recent_logins ?? '—'}</div>
             <p className="text-sm text-gray-600 mt-1">Logged in today</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters and Search */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-4">
+          <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 placeholder="Search by name or email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-10"
               />
             </div>
             <div className="flex gap-2">
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <Select
+                value={filterStatus}
+                onValueChange={(v) => setFilterStatus(v as 'all' | 'active' | 'inactive')}
+              >
                 <SelectTrigger className="w-[180px]">
                   <Filter className="w-4 h-4 mr-2" />
                   <SelectValue placeholder="Filter by status" />
@@ -223,15 +249,18 @@ export default function AdminManagementPage() {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+              <Button type="submit" className="bg-[#195440] hover:bg-[#195440]/90">
+                Search
+              </Button>
             </div>
-          </div>
+          </form>
         </CardContent>
       </Card>
 
-      {/* Admin Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Admin Users</CardTitle>
+          {isFetching && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -240,91 +269,75 @@ export default function AdminManagementPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Permissions</TableHead>
+                  <TableHead>Last Login</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAdmins.map((admin) => (
-                  <TableRow key={admin.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <UserAvatar name={admin.name} size="sm" />
-                        <span className="font-medium">{admin.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-gray-400" />
-                        {admin.email}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        className={admin.role === 'Super Admin' ? 'bg-[#195440]' : 'bg-[#E1B047]'}
-                      >
-                        {admin.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={admin.status === 'Active' ? 'default' : 'secondary'}
-                        className={admin.status === 'Active' ? 'bg-green-600' : ''}
-                      >
-                        {admin.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {admin.permissions.slice(0, 2).map((perm, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs">
-                            {perm}
-                          </Badge>
-                        ))}
-                        {admin.permissions.length > 2 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{admin.permissions.length - 2} more
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditAdmin(admin)}
+                {isLoading ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">Loading...</TableCell></TableRow>
+                ) : rows.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No admins found</TableCell></TableRow>
+                ) : rows.map((admin) => {
+                  const isSelf = admin.id === currentAdminId;
+                  return (
+                    <TableRow key={admin.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={admin.full_name || admin.email} size="sm" />
+                          <span className="font-medium">
+                            {admin.full_name || '—'}
+                            {isSelf && <Badge variant="outline" className="ml-2 text-xs">You</Badge>}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-4 h-4 text-gray-400" />
+                          {admin.email}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={admin.status === 'Active' ? 'default' : 'secondary'}
+                          className={admin.status === 'Active' ? 'bg-green-600' : ''}
                         >
-                          <Edit className="w-4 h-4 mr-1" />
-                          Edit
-                        </Button>
-                        {admin.role !== 'Super Admin' && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRevokeAccess(admin)}
-                              className="border-orange-500 text-orange-600 hover:bg-orange-50"
-                            >
-                              <Lock className="w-4 h-4 mr-1" />
-                              Revoke
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleDeleteAdmin(admin)}
-                            >
-                              <Trash2 className="w-4 h-4 mr-1" />
-                              Delete
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          {admin.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-600">{formatDate(admin.last_login)}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{formatDate(admin.created_at)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => openEdit(admin)}>
+                            <Edit className="w-4 h-4 mr-1" />
+                            Edit
+                          </Button>
+                          {!isSelf && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openStatus(admin)}
+                                className={admin.is_blocked
+                                  ? 'border-green-600 text-green-700 hover:bg-green-50'
+                                  : 'border-orange-500 text-orange-600 hover:bg-orange-50'}
+                              >
+                                {admin.is_blocked ? <><Unlock className="w-4 h-4 mr-1" />Activate</> : <><Lock className="w-4 h-4 mr-1" />Revoke</>}
+                              </Button>
+                              <Button variant="destructive" size="sm" onClick={() => openDelete(admin)}>
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Delete
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -332,28 +345,26 @@ export default function AdminManagementPage() {
       </Card>
 
       {/* Create Admin Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="w-[95vw] max-w-md overflow-hidden">
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>Create New Admin</DialogTitle>
-            <DialogDescription>
-              Add a new administrator to the system with specific permissions.
-            </DialogDescription>
+            <DialogDescription>Add a new admin account.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-6">
             <div>
-              <Label htmlFor="admin-name">Full Name</Label>
+              <Label htmlFor="c-name">Full Name</Label>
               <Input
-                id="admin-name"
+                id="c-name"
                 placeholder="Enter full name"
-                value={newAdmin.name}
-                onChange={(e) => setNewAdmin({ ...newAdmin, name: e.target.value })}
+                value={newAdmin.full_name}
+                onChange={(e) => setNewAdmin({ ...newAdmin, full_name: e.target.value })}
               />
             </div>
             <div>
-              <Label htmlFor="admin-email">Email Address</Label>
+              <Label htmlFor="c-email">Email Address</Label>
               <Input
-                id="admin-email"
+                id="c-email"
                 type="email"
                 placeholder="admin@example.com"
                 value={newAdmin.email}
@@ -361,182 +372,124 @@ export default function AdminManagementPage() {
               />
             </div>
             <div>
-              <Label htmlFor="admin-password">Password</Label>
+              <Label htmlFor="c-password">Password</Label>
               <Input
-                id="admin-password"
+                id="c-password"
                 type="password"
-                placeholder="Enter secure password"
+                placeholder="Min 6 characters"
                 value={newAdmin.password}
                 onChange={(e) => setNewAdmin({ ...newAdmin, password: e.target.value })}
               />
             </div>
-            <div>
-              <Label htmlFor="admin-role">Role</Label>
-              <Select value={newAdmin.role} onValueChange={(value) => setNewAdmin({ ...newAdmin, role: value })}>
-                <SelectTrigger id="admin-role">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Super Admin">Super Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Permissions</Label>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {['User Management', 'Business Management', 'Content Management', 'Report Management', 'Ad Management', 'Job Management'].map((perm) => (
-                  <div key={perm} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id={perm}
-                      className="rounded border-gray-300"
-                      checked={newAdmin.permissions.includes(perm)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setNewAdmin({ ...newAdmin, permissions: [...newAdmin.permissions, perm] });
-                        } else {
-                          setNewAdmin({ ...newAdmin, permissions: newAdmin.permissions.filter(p => p !== perm) });
-                        }
-                      }}
-                    />
-                    <Label htmlFor={perm} className="text-sm font-normal cursor-pointer">
-                      {perm}
-                    </Label>
-                  </div>
-                ))}
+            {error && (
+              <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                {error}
               </div>
-            </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreateAdmin} className="bg-[#195440] hover:bg-[#195440]/90">
-              Create Admin
+            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button
+              onClick={handleCreate}
+              disabled={creating || !newAdmin.email || !newAdmin.password || !newAdmin.full_name}
+              className="bg-[#195440] hover:bg-[#195440]/90"
+            >
+              {creating ? 'Creating...' : 'Create Admin'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Edit Admin Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="w-[95vw] max-w-md overflow-hidden">
+      <Dialog open={showEdit} onOpenChange={setShowEdit}>
+        <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Admin User</DialogTitle>
-            <DialogDescription>
-              Update admin details and permissions for {selectedAdmin?.name}.
-            </DialogDescription>
+            <DialogDescription>Update name or email for {selected?.full_name || selected?.email}.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-6">
             <div>
-              <Label htmlFor="edit-name">Full Name</Label>
+              <Label htmlFor="e-name">Full Name</Label>
               <Input
-                id="edit-name"
-                placeholder="Enter full name"
-                value={editAdmin.name}
-                onChange={(e) => setEditAdmin({ ...editAdmin, name: e.target.value })}
+                id="e-name"
+                value={editAdmin.full_name}
+                onChange={(e) => setEditAdmin({ ...editAdmin, full_name: e.target.value })}
               />
             </div>
             <div>
-              <Label htmlFor="edit-email">Email Address</Label>
+              <Label htmlFor="e-email">Email Address</Label>
               <Input
-                id="edit-email"
+                id="e-email"
                 type="email"
-                placeholder="admin@example.com"
                 value={editAdmin.email}
                 onChange={(e) => setEditAdmin({ ...editAdmin, email: e.target.value })}
               />
             </div>
-            <div>
-              <Label htmlFor="edit-role">Role</Label>
-              <Select value={editAdmin.role} onValueChange={(value) => setEditAdmin({ ...editAdmin, role: value })}>
-                <SelectTrigger id="edit-role">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Super Admin">Super Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Permissions</Label>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {['User Management', 'Business Management', 'Content Management', 'Report Management', 'Ad Management', 'Job Management'].map((perm) => (
-                  <div key={perm} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id={`edit-${perm}`}
-                      className="rounded border-gray-300"
-                      checked={editAdmin.permissions.includes(perm)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setEditAdmin({ ...editAdmin, permissions: [...editAdmin.permissions, perm] });
-                        } else {
-                          setEditAdmin({ ...editAdmin, permissions: editAdmin.permissions.filter(p => p !== perm) });
-                        }
-                      }}
-                    />
-                    <Label htmlFor={`edit-${perm}`} className="text-sm font-normal cursor-pointer">
-                      {perm}
-                    </Label>
-                  </div>
-                ))}
+            {error && (
+              <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                {error}
               </div>
-            </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpdateAdmin} className="bg-[#195440] hover:bg-[#195440]/90">
-              Update Admin
+            <Button variant="outline" onClick={() => setShowEdit(false)}>Cancel</Button>
+            <Button onClick={handleUpdate} disabled={updating} className="bg-[#195440] hover:bg-[#195440]/90">
+              {updating ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Revoke Access Dialog */}
-      <Dialog open={showRevokeDialog} onOpenChange={setShowRevokeDialog}>
+      {/* Status Toggle Dialog */}
+      <Dialog open={showStatus} onOpenChange={setShowStatus}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Revoke Admin Access</DialogTitle>
+            <DialogTitle>{selected?.is_blocked ? 'Activate Admin' : 'Revoke Admin Access'}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to revoke admin access for {selectedAdmin?.name}? They will be marked as inactive but their account will remain in the system.
+              {selected?.is_blocked
+                ? `Re-activate ${selected?.full_name || selected?.email}? They will be able to log in again.`
+                : `Revoke access for ${selected?.full_name || selected?.email}? All their sessions will be deleted and they will not be able to log in until reactivated.`}
             </DialogDescription>
           </DialogHeader>
+          {error && (
+            <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mx-6">
+              {error}
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRevokeDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={confirmRevokeAccess}
-              className="bg-orange-600 hover:bg-orange-700"
+            <Button variant="outline" onClick={() => setShowStatus(false)}>Cancel</Button>
+            <Button
+              onClick={confirmStatus}
+              disabled={settingStatus}
+              className={selected?.is_blocked ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
             >
-              <Lock className="w-4 h-4 mr-2" />
-              Revoke Access
+              {selected?.is_blocked
+                ? <><Unlock className="w-4 h-4 mr-2" />{settingStatus ? 'Activating...' : 'Activate'}</>
+                : <><Lock className="w-4 h-4 mr-2" />{settingStatus ? 'Revoking...' : 'Revoke Access'}</>}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Admin Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      {/* Delete Dialog */}
+      <Dialog open={showDelete} onOpenChange={setShowDelete}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Admin User</DialogTitle>
             <DialogDescription>
-              Are you sure you want to permanently delete {selectedAdmin?.name}? This action cannot be undone and will remove all their data from the system.
+              Permanently delete {selected?.full_name || selected?.email}? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {error && (
+            <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mx-6">
+              {error}
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmDeleteAdmin}>
+            <Button variant="outline" onClick={() => setShowDelete(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
               <Trash2 className="w-4 h-4 mr-2" />
-              Delete Permanently
+              {deleting ? 'Deleting...' : 'Delete Permanently'}
             </Button>
           </DialogFooter>
         </DialogContent>
