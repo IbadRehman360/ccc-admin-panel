@@ -1,6 +1,4 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { getUserProfileImage } from '@/data/userProfiles';
-import { User } from 'lucide-react';
 
 interface UserAvatarProps {
   name: string;
@@ -9,26 +7,25 @@ interface UserAvatarProps {
   className?: string;
 }
 
+const sizeClasses = {
+  sm: 'size-6 text-[10px]',
+  md: 'size-8 text-xs',
+  lg: 'size-10 text-sm',
+};
+
+const getInitials = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+};
+
 export function UserAvatar({ name, imageUrl, size = 'md', className = '' }: UserAvatarProps) {
-  const profileImage = imageUrl || getUserProfileImage(name);
-
-  const sizeClasses = {
-    sm: 'size-6',
-    md: 'size-8',
-    lg: 'size-10',
-  };
-
-  const iconSizes = {
-    sm: 'size-3',
-    md: 'size-4',
-    lg: 'size-5',
-  };
-
   return (
     <Avatar className={`${sizeClasses[size]} ${className}`}>
-      {profileImage && <AvatarImage src={profileImage} alt={name} />}
-      <AvatarFallback className="bg-gray-200 text-gray-500">
-        <User className={iconSizes[size]} />
+      {imageUrl && <AvatarImage src={imageUrl} alt={name} />}
+      <AvatarFallback className="bg-[#195440] text-white font-medium">
+        {getInitials(name)}
       </AvatarFallback>
     </Avatar>
   );
