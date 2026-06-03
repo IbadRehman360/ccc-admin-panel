@@ -1,778 +1,244 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  Search, Filter, MapPin, Users, Loader2, CheckCircle,
+  ExternalLink, AlertCircle, Building2,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { UserAvatar } from '@/components/layout/UserAvatar';
-import { 
-  MapPin, 
-  CheckCircle,
-  XCircle,
-  Eye,
-  User,
-  Users,
-  TrendingUp,
-  Smartphone,
-  Search,
-  MapPinned
-} from 'lucide-react';
+import {
+  useGetGeoStatsQuery,
+  useGetTopLocationsQuery,
+  useListGeoUsersQuery,
+} from '@/store/api/geofencingApi';
 
-interface GeofencingUser {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  accountType: 'User' | 'Business';
-  geofencingEnabled: boolean;
-  lastLocationUpdate: string;
-  deviceType: 'iOS' | 'Android';
-  latitude?: number;
-  longitude?: number;
-  city?: string;
-  state?: string;
-  locationPermission: 'Always' | 'While Using' | 'Denied';
-  joinedDate: string;
-}
+const formatDate = (iso: string | null) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+  });
+};
 
-const geofencingUsers: GeofencingUser[] = [
-  {
-    id: 'U12345',
-    name: 'Sarah Johnson',
-    email: 'sarah.j@email.com',
-    phone: '+1 (555) 123-4567',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T10:30:00',
-    deviceType: 'iOS',
-    latitude: 37.7749,
-    longitude: -122.4194,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-06-15T00:00:00'
-  },
-  {
-    id: 'U23456',
-    name: 'Michael Chen',
-    email: 'michael.c@email.com',
-    phone: '+1 (555) 234-5678',
-    accountType: 'Business',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T10:15:00',
-    deviceType: 'Android',
-    latitude: 37.7849,
-    longitude: -122.4094,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-08-20T00:00:00'
-  },
-  {
-    id: 'U34567',
-    name: 'Emily Rodriguez',
-    email: 'emily.r@email.com',
-    phone: '+1 (555) 345-6789',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T09:45:00',
-    deviceType: 'iOS',
-    latitude: 37.7649,
-    longitude: -122.4294,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'While Using',
-    joinedDate: '2025-09-10T00:00:00'
-  },
-  {
-    id: 'U45678',
-    name: 'David Thompson',
-    email: 'david.t@email.com',
-    phone: '+1 (555) 456-7890',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T09:30:00',
-    deviceType: 'Android',
-    latitude: 37.7949,
-    longitude: -122.3994,
-    city: 'Oakland',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-07-22T00:00:00'
-  },
-  {
-    id: 'U56789',
-    name: 'Lisa Wang',
-    email: 'lisa.w@email.com',
-    phone: '+1 (555) 567-8901',
-    accountType: 'Business',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T09:00:00',
-    deviceType: 'iOS',
-    latitude: 37.7549,
-    longitude: -122.4394,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-05-30T00:00:00'
-  },
-  {
-    id: 'U67890',
-    name: 'James Anderson',
-    email: 'james.a@email.com',
-    phone: '+1 (555) 678-9012',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T08:45:00',
-    deviceType: 'Android',
-    latitude: 37.7449,
-    longitude: -122.4494,
-    city: 'Berkeley',
-    state: 'CA',
-    locationPermission: 'While Using',
-    joinedDate: '2025-10-05T00:00:00'
-  },
-  {
-    id: 'U78901',
-    name: 'Maria Garcia',
-    email: 'maria.g@email.com',
-    phone: '+1 (555) 789-0123',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T08:30:00',
-    deviceType: 'iOS',
-    latitude: 37.7349,
-    longitude: -122.4594,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-11-12T00:00:00'
-  },
-  {
-    id: 'U89012',
-    name: 'Robert Kim',
-    email: 'robert.k@email.com',
-    phone: '+1 (555) 890-1234',
-    accountType: 'Business',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T08:15:00',
-    deviceType: 'Android',
-    latitude: 37.7249,
-    longitude: -122.4694,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-04-18T00:00:00'
-  },
-  {
-    id: 'U90123',
-    name: 'Jennifer Lee',
-    email: 'jennifer.l@email.com',
-    phone: '+1 (555) 901-2345',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T08:00:00',
-    deviceType: 'iOS',
-    latitude: 37.7149,
-    longitude: -122.4794,
-    city: 'Daly City',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-08-25T00:00:00'
-  },
-  {
-    id: 'U01234',
-    name: 'Alex Martinez',
-    email: 'alex.m@email.com',
-    phone: '+1 (555) 012-3456',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T07:45:00',
-    deviceType: 'Android',
-    latitude: 37.7049,
-    longitude: -122.4894,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'While Using',
-    joinedDate: '2025-12-01T00:00:00'
-  },
-  {
-    id: 'U11223',
-    name: 'Thomas Brown',
-    email: 'thomas.b@email.com',
-    phone: '+1 (555) 112-2334',
-    accountType: 'Business',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T07:30:00',
-    deviceType: 'iOS',
-    latitude: 37.6949,
-    longitude: -122.4994,
-    city: 'San Mateo',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-03-14T00:00:00'
-  },
-  {
-    id: 'U22334',
-    name: 'Amanda Wilson',
-    email: 'amanda.w@email.com',
-    phone: '+1 (555) 223-3445',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T07:15:00',
-    deviceType: 'Android',
-    latitude: 37.7749,
-    longitude: -122.4194,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-07-08T00:00:00'
-  },
-  {
-    id: 'U33445',
-    name: 'Christopher Davis',
-    email: 'chris.d@email.com',
-    phone: '+1 (555) 334-4556',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T07:00:00',
-    deviceType: 'iOS',
-    latitude: 37.7849,
-    longitude: -122.4294,
-    city: 'Oakland',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-09-19T00:00:00'
-  },
-  {
-    id: 'U44556',
-    name: 'Patricia Moore',
-    email: 'patricia.m@email.com',
-    phone: '+1 (555) 445-5667',
-    accountType: 'Business',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T06:45:00',
-    deviceType: 'Android',
-    latitude: 37.7549,
-    longitude: -122.4094,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'While Using',
-    joinedDate: '2025-06-22T00:00:00'
-  },
-  {
-    id: 'U55667',
-    name: 'Daniel Taylor',
-    email: 'daniel.t@email.com',
-    phone: '+1 (555) 556-6778',
-    accountType: 'User',
-    geofencingEnabled: true,
-    lastLocationUpdate: '2026-03-03T06:30:00',
-    deviceType: 'iOS',
-    latitude: 37.7649,
-    longitude: -122.4394,
-    city: 'San Francisco',
-    state: 'CA',
-    locationPermission: 'Always',
-    joinedDate: '2025-10-30T00:00:00'
-  }
-];
+const mapUrl = (lat: string, lng: string) =>
+  `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lng)}`;
 
 export default function GeofencingPage() {
-  const [users] = useState<GeofencingUser[]>(geofencingUsers);
-  const [selectedUser, setSelectedUser] = useState<GeofencingUser | null>(null);
-  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterAccountType, setFilterAccountType] = useState<string>('All');
-  const [filterDeviceType, setFilterDeviceType] = useState<string>('All');
-  const [filterPermission, setFilterPermission] = useState<string>('All');
+  const { data: stats } = useGetGeoStatsQuery();
+  const { data: topLocations = [] } = useGetTopLocationsQuery(10);
 
-  // Calculate stats
-  const totalUsersWithGeofencing = users.filter(u => u.geofencingEnabled).length;
-  const regularUsers = users.filter(u => u.geofencingEnabled && u.accountType === 'User').length;
-  const businessUsers = users.filter(u => u.geofencingEnabled && u.accountType === 'Business').length;
-  const iosUsers = users.filter(u => u.geofencingEnabled && u.deviceType === 'iOS').length;
-  const androidUsers = users.filter(u => u.geofencingEnabled && u.deviceType === 'Android').length;
-  const alwaysPermission = users.filter(u => u.geofencingEnabled && u.locationPermission === 'Always').length;
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [accountType, setAccountType] = useState<'all' | 'USER' | 'BUSINESS'>('all');
+  const [hasLocation, setHasLocation] = useState<'all' | 'true' | 'false'>('true');
+  const [stateFilter, setStateFilter] = useState<string>('');
+  const [page, setPage] = useState(1);
 
-  // Filter users
-  const filteredUsers = users.filter(user => {
-    if (!user.geofencingEnabled) return false;
-    
-    const accountTypeMatch = filterAccountType === 'All' || user.accountType === filterAccountType;
-    const deviceTypeMatch = filterDeviceType === 'All' || user.deviceType === filterDeviceType;
-    const permissionMatch = filterPermission === 'All' || user.locationPermission === filterPermission;
-    const searchMatch = searchQuery === '' || 
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (user.city && user.city.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    return accountTypeMatch && deviceTypeMatch && permissionMatch && searchMatch;
+  const { data: list, isFetching } = useListGeoUsersQuery({
+    search,
+    account_type: accountType,
+    has_location: hasLocation,
+    state: stateFilter || undefined,
+    page,
+    limit: 25,
   });
 
-  const handleViewDetails = (user: GeofencingUser) => {
-    setSelectedUser(user);
-    setShowDetailsDialog(true);
-    
-    // Log view action
-    console.log('User Geofencing Details Viewed:', {
-      userId: user.id,
-      userName: user.name,
-      viewedBy: 'Current Admin',
-      timestamp: new Date().toISOString()
-    });
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearch(searchInput);
+    setPage(1);
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric'
-    });
-  };
-
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} min ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-  };
-
-  const getPermissionColor = (permission: string) => {
-    switch (permission) {
-      case 'Always':
-        return 'bg-green-100 text-green-800';
-      case 'While Using':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'Denied':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
+  const rows = list?.data ?? [];
+  const totalPages = list?.pagination.total_pages ?? 1;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Geofencing Users</h1>
-        <p className="text-gray-600 mt-1">View all users who have enabled geofencing on their devices</p>
+        <h1 className="text-3xl font-bold text-gray-900">Geofencing</h1>
+        <p className="text-gray-600 mt-2">Browse users and businesses with location data</p>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-[#195440]">{totalUsersWithGeofencing}</div>
-                <p className="text-sm text-gray-600 mt-1">Total Users</p>
-              </div>
-              <MapPinned className="w-8 h-8 text-[#195440]" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-blue-600">{regularUsers}</div>
-                <p className="text-sm text-gray-600 mt-1">Regular Users</p>
-              </div>
-              <User className="w-8 h-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-purple-600">{businessUsers}</div>
-                <p className="text-sm text-gray-600 mt-1">Business Users</p>
-              </div>
-              <Users className="w-8 h-8 text-purple-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-gray-900">{iosUsers}</div>
-                <p className="text-sm text-gray-600 mt-1">iOS Devices</p>
-              </div>
-              <Smartphone className="w-8 h-8 text-gray-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-green-600">{androidUsers}</div>
-                <p className="text-sm text-gray-600 mt-1">Android Devices</p>
-              </div>
-              <Smartphone className="w-8 h-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-green-600">{alwaysPermission}</div>
-                <p className="text-sm text-gray-600 mt-1">Always On</p>
-              </div>
-              <CheckCircle className="w-8 h-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <StatCard label="Total Accounts" value={stats?.total} icon={Users} color="text-gray-900" />
+        <StatCard label="With Location" value={stats?.with_location} icon={MapPin} color="text-green-600" />
+        <StatCard label="Without Location" value={stats?.without_location} icon={MapPin} color="text-gray-500" />
+        <StatCard label="Users w/ Loc" value={stats?.users_with_location} icon={Users} color="text-blue-600" />
+        <StatCard label="Biz w/ Loc" value={stats?.businesses_with_location} icon={Building2} color="text-[#E1B047]" />
       </div>
 
-      {/* Users Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MapPin className="w-5 h-5" />
-            Users with Geofencing Enabled
-          </CardTitle>
-          <p className="text-sm text-gray-600 mt-2">
-            Monitor users who have enabled location services and geofencing on their mobile devices
-          </p>
-        </CardHeader>
-        <CardContent>
-          {/* Filters */}
-          <div className="space-y-4 mb-6">
-            <div className="flex flex-wrap gap-4 items-end">
-              {/* Search */}
-              <div className="flex-1 min-w-[250px]">
-                <Label>Search Users</Label>
-                <div className="relative mt-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    placeholder="Search by name, email, ID, or city..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
+      <div className="flex items-start gap-2 max-w-4xl bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-900">
+        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+        <span>
+          <strong>Device type, permission state, geofence zones</strong> need schema additions. This page shows users with lat/lng set in their profile (mobile app collects this).
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle>Top States</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {topLocations.length === 0
+              ? <p className="text-sm text-gray-500">No data yet.</p>
+              : topLocations.map((loc) => {
+                  const max = Math.max(...topLocations.map((l) => l.count));
+                  const pct = max > 0 ? (loc.count / max) * 100 : 0;
+                  return (
+                    <button
+                      key={loc.state}
+                      type="button"
+                      onClick={() => { setStateFilter(loc.state); setPage(1); }}
+                      className="w-full text-left"
+                    >
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span className="font-medium">{loc.state}</span>
+                        <span className="text-gray-500">{loc.count.toLocaleString()}</span>
+                      </div>
+                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#195440]" style={{ width: `${pct}%` }}></div>
+                      </div>
+                    </button>
+                  );
+                })}
+            {stateFilter && (
+              <Button variant="ghost" size="sm" onClick={() => { setStateFilter(''); setPage(1); }} className="w-full mt-2 text-xs">
+                Clear state filter ({stateFilter})
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Users / Businesses</CardTitle>
+            {isFetching && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={submitSearch} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+              <div className="md:col-span-2 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Search name, email, city..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-10"
+                />
               </div>
+              <Select value={accountType} onValueChange={(v) => { setAccountType(v as typeof accountType); setPage(1); }}>
+                <SelectTrigger><Filter className="w-4 h-4 mr-2" /><SelectValue placeholder="Type" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="USER">Users</SelectItem>
+                  <SelectItem value="BUSINESS">Businesses</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={hasLocation} onValueChange={(v) => { setHasLocation(v as typeof hasLocation); setPage(1); }}>
+                <SelectTrigger><SelectValue placeholder="Location" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="true">With Location</SelectItem>
+                  <SelectItem value="false">Without Location</SelectItem>
+                </SelectContent>
+              </Select>
+            </form>
 
-              {/* Account Type Filter */}
-              <div className="w-[160px]">
-                <Label>Account Type</Label>
-                <Select value={filterAccountType} onValueChange={setFilterAccountType}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="All">All Types</SelectItem>
-                    <SelectItem value="User">User</SelectItem>
-                    <SelectItem value="Business">Business</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Device Type Filter */}
-              <div className="w-[160px]">
-                <Label>Device Type</Label>
-                <Select value={filterDeviceType} onValueChange={setFilterDeviceType}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="All">All Devices</SelectItem>
-                    <SelectItem value="iOS">iOS</SelectItem>
-                    <SelectItem value="Android">Android</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Permission Filter */}
-              <div className="w-[180px]">
-                <Label>Permission Level</Label>
-                <Select value={filterPermission} onValueChange={setFilterPermission}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="All">All Permissions</SelectItem>
-                    <SelectItem value="Always">Always</SelectItem>
-                    <SelectItem value="While Using">While Using</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="text-sm text-gray-600">
-              Showing {filteredUsers.length} of {totalUsersWithGeofencing} users with geofencing enabled
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="border rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="font-semibold">User</TableHead>
-                  <TableHead className="font-semibold">Account Type</TableHead>
-                  <TableHead className="font-semibold">Device</TableHead>
-                  <TableHead className="font-semibold">Location</TableHead>
-                  <TableHead className="font-semibold">Permission</TableHead>
-                  <TableHead className="font-semibold">Last Update</TableHead>
-                  <TableHead className="font-semibold">Joined</TableHead>
-                  <TableHead className="text-right font-semibold">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsers.length === 0 ? (
+            <div className="border rounded-lg overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                      No users found matching your criteria
-                    </TableCell>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>City / State</TableHead>
+                    <TableHead>Coordinates</TableHead>
+                    <TableHead>FCM</TableHead>
+                    <TableHead>Last Active</TableHead>
                   </TableRow>
-                ) : (
-                  filteredUsers.map((user) => (
-                    <TableRow key={user.id} className="hover:bg-gray-50">
+                </TableHeader>
+                <TableBody>
+                  {rows.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No accounts found</TableCell></TableRow>
+                  ) : rows.map((u) => (
+                    <TableRow key={u.id}>
                       <TableCell>
-                        <div className="flex items-center gap-3">
-                          <UserAvatar name={user.name} size="md" />
-                          <div>
-                            <div className="font-medium text-gray-900">{user.name}</div>
-                            <div className="text-sm text-gray-500">{user.email}</div>
-                            <div className="text-xs text-gray-400">{user.id}</div>
-                          </div>
+                        <div className="text-sm">
+                          <div className="font-medium">{u.name}</div>
+                          <div className="text-xs text-gray-500">{u.email}</div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={user.accountType === 'Business' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}>
-                          {user.accountType}
+                        <Badge variant={u.account_type === 'Business' ? 'default' : 'outline'} className={u.account_type === 'Business' ? 'bg-[#195440]' : ''}>
+                          {u.account_type}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Smartphone className={`w-4 h-4 ${user.deviceType === 'iOS' ? 'text-gray-700' : 'text-green-600'}`} />
-                          <span className="font-medium">{user.deviceType}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {user.city && user.state ? (
+                      <TableCell className="text-sm text-gray-600">
+                        {u.city || u.state ? (
                           <div className="flex items-center gap-1">
-                            <MapPin className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm">{user.city}, {user.state}</span>
+                            <MapPin className="w-3 h-3 text-gray-400" />
+                            {[u.city, u.state].filter(Boolean).join(', ')}
                           </div>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {u.has_location ? (
+                          <a
+                            href={mapUrl(u.latitude!, u.longitude!)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            {Number(u.latitude).toFixed(3)}, {Number(u.longitude).toFixed(3)}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         ) : (
-                          <span className="text-sm text-gray-400">No location</span>
+                          <span className="text-gray-400">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge className={getPermissionColor(user.locationPermission)}>
-                          {user.locationPermission}
-                        </Badge>
+                        {u.has_fcm_token
+                          ? <CheckCircle className="w-4 h-4 text-green-600" />
+                          : <span className="text-xs text-gray-400">—</span>}
                       </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{getTimeAgo(user.lastLocationUpdate)}</div>
-                          <div className="text-xs text-gray-500">{formatDateTime(user.lastLocationUpdate)}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {formatDate(user.joinedDate)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleViewDetails(user)}
-                        >
-                          <Eye className="w-4 h-4 mr-1" />
-                          View
-                        </Button>
-                      </TableCell>
+                      <TableCell className="text-sm text-gray-600">{formatDate(u.last_active)}</TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* View User Details Dialog */}
-      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-        <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MapPin className="w-5 h-5" />
-              Geofencing Details
-            </DialogTitle>
-            <DialogDescription>
-              Location and geofencing information for this user
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedUser && (
-            <div className="space-y-6 px-6">
-              {/* User Header */}
-              <div className="p-4 bg-gray-50 rounded-lg border">
-                <div className="flex items-start gap-4">
-                  <UserAvatar name={selectedUser.name} size="lg" />
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-gray-900">{selectedUser.name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{selectedUser.email}</p>
-                    <p className="text-sm text-gray-600">{selectedUser.phone}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge variant="outline" className={selectedUser.accountType === 'Business' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}>
-                        {selectedUser.accountType}
-                      </Badge>
-                      <Badge variant="outline">
-                        <Smartphone className="w-3 h-3 mr-1" />
-                        {selectedUser.deviceType}
-                      </Badge>
-                      <Badge className="bg-green-100 text-green-800">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Geofencing Enabled
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Location Permission */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900">Location Permission</h4>
-                <div className={`p-4 rounded-lg border ${
-                  selectedUser.locationPermission === 'Always' ? 'bg-green-50 border-green-200' :
-                  selectedUser.locationPermission === 'While Using' ? 'bg-yellow-50 border-yellow-200' :
-                  'bg-red-50 border-red-200'
-                }`}>
-                  <div className="flex items-start gap-3">
-                    {selectedUser.locationPermission === 'Always' ? (
-                      <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
-                    ) : selectedUser.locationPermission === 'While Using' ? (
-                      <MapPin className="w-6 h-6 text-yellow-600 flex-shrink-0" />
-                    ) : (
-                      <XCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
-                    )}
-                    <div>
-                      <p className={`font-semibold ${
-                        selectedUser.locationPermission === 'Always' ? 'text-green-900' :
-                        selectedUser.locationPermission === 'While Using' ? 'text-yellow-900' :
-                        'text-red-900'
-                      }`}>
-                        {selectedUser.locationPermission}
-                      </p>
-                      <p className={`text-sm mt-1 ${
-                        selectedUser.locationPermission === 'Always' ? 'text-green-800' :
-                        selectedUser.locationPermission === 'While Using' ? 'text-yellow-800' :
-                        'text-red-800'
-                      }`}>
-                        {selectedUser.locationPermission === 'Always' && 'User has granted continuous location access. Geofencing works in the background.'}
-                        {selectedUser.locationPermission === 'While Using' && 'User has granted location access only when app is in use. Background geofencing may be limited.'}
-                        {selectedUser.locationPermission === 'Denied' && 'User has denied location access. Geofencing features are not available.'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Current Location */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900">Current Location</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">City</Label>
-                    <p className="font-medium mt-1">{selectedUser.city || 'N/A'}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">State</Label>
-                    <p className="font-medium mt-1">{selectedUser.state || 'N/A'}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Latitude</Label>
-                    <p className="font-medium mt-1">{selectedUser.latitude?.toFixed(6) || 'N/A'}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Longitude</Label>
-                    <p className="font-medium mt-1">{selectedUser.longitude?.toFixed(6) || 'N/A'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Activity Information */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900">Activity Information</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Last Location Update</Label>
-                    <p className="font-medium mt-1">{formatDateTime(selectedUser.lastLocationUpdate)}</p>
-                    <p className="text-xs text-gray-500 mt-1">{getTimeAgo(selectedUser.lastLocationUpdate)}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Joined Date</Label>
-                    <p className="font-medium mt-1">{formatDate(selectedUser.joinedDate)}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">User ID</Label>
-                    <p className="font-medium mt-1">{selectedUser.id}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg border">
-                    <Label className="text-xs text-gray-600">Device Type</Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Smartphone className={`w-4 h-4 ${selectedUser.deviceType === 'iOS' ? 'text-gray-700' : 'text-green-600'}`} />
-                      <span className="font-medium">{selectedUser.deviceType}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Geofencing Status */}
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <MapPinned className="w-6 h-6 text-green-600 flex-shrink-0" />
-                  <div>
-                    <p className="font-semibold text-green-900">Geofencing Active</p>
-                    <p className="text-sm text-green-800 mt-1">
-                      This user has enabled geofencing and will receive location-based notifications for events, communities, jobs, and businesses when entering or exiting geofenced areas.
-                    </p>
-                  </div>
-                </div>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-          )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDetailsDialog(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            {list && (
+              <div className="flex items-center justify-between mt-4">
+                <p className="text-sm text-gray-500">
+                  Page {list.pagination.page} of {totalPages} — {list.pagination.total.toLocaleString()} total
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+                  <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
+  );
+}
+
+function StatCard({ label, value, icon: Icon, color }: { label: string; value?: number; icon: React.ComponentType<{ className?: string }>; color: string }) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium text-gray-600">{label}</CardTitle>
+        <Icon className={`w-5 h-5 ${color}`} />
+      </CardHeader>
+      <CardContent>
+        <div className={`text-3xl font-bold ${color}`}>{value?.toLocaleString() ?? '—'}</div>
+      </CardContent>
+    </Card>
   );
 }
