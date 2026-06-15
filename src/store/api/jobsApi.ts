@@ -1,6 +1,6 @@
 import { baseApi, type ApiResponse } from './baseApi';
 
-export type JobStatus = 'ACTIVE' | 'CLOSED' | 'PAST';
+export type JobStatus = 'ACTIVE' | 'CLOSED' | 'PAST' | 'SUSPENDED';
 export type JobType =
   | 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'TEMPORARY'
   | 'VOLUNTEER' | 'INTERSHIP' | 'OTHER';
@@ -58,6 +58,7 @@ export interface JobStats {
   active: number;
   closed: number;
   past: number;
+  suspended: number;
   total_applications: number;
 }
 

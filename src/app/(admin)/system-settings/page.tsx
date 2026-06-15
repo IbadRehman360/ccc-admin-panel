@@ -19,17 +19,7 @@ import {
   useSetAboutMutation,
   type SettingsContent,
 } from '@/store/api/settingsApi';
-
-const formatDateTime = (iso: string | null) => {
-  if (!iso) return 'Never';
-  const d = new Date(iso);
-  return `${d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
-};
+import { extractError, formatDateTime } from '@/lib/format';
 
 export default function SystemSettingsPage() {
   return (

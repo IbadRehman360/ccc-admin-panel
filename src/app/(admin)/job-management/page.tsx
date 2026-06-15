@@ -28,18 +28,12 @@ import {
   type JobStatus,
   type JobType,
 } from '@/store/api/jobsApi';
-
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
-};
+import { extractError, formatDate } from '@/lib/format';
 
 const statusBadge = (s: JobStatus) => {
   if (s === 'ACTIVE') return <Badge className="bg-green-600">Active</Badge>;
   if (s === 'CLOSED') return <Badge variant="secondary">Closed</Badge>;
+  if (s === 'SUSPENDED') return <Badge variant="destructive">Suspended</Badge>;
   return <Badge variant="outline">Past</Badge>;
 };
 
@@ -140,6 +134,7 @@ export default function JobManagementPage() {
                 <SelectItem value="ACTIVE">Active</SelectItem>
                 <SelectItem value="CLOSED">Closed</SelectItem>
                 <SelectItem value="PAST">Past</SelectItem>
+                <SelectItem value="SUSPENDED">Suspended</SelectItem>
               </SelectContent>
             </Select>
             <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v as JobType | 'all'); setPage(1); }}>
@@ -220,12 +215,17 @@ export default function JobManagementPage() {
                             <Eye className="w-4 h-4 mr-2" />View Job
                           </DropdownMenuItem>
                           {j.job_status === 'ACTIVE' ? (
-                            <DropdownMenuItem onClick={() => openAction(j, { kind: 'status', status: 'CLOSED' })}>
-                              <XCircle className="w-4 h-4 mr-2" />Close Job
-                            </DropdownMenuItem>
+                            <>
+                              <DropdownMenuItem onClick={() => openAction(j, { kind: 'status', status: 'CLOSED' })}>
+                                <XCircle className="w-4 h-4 mr-2" />Close Job
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openAction(j, { kind: 'status', status: 'SUSPENDED' })}>
+                                <XCircle className="w-4 h-4 mr-2" />Suspend
+                              </DropdownMenuItem>
+                            </>
                           ) : (
                             <DropdownMenuItem onClick={() => openAction(j, { kind: 'status', status: 'ACTIVE' })}>
-                              <CheckCircle className="w-4 h-4 mr-2" />Reopen
+                              <CheckCircle className="w-4 h-4 mr-2" />Reactivate
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem onClick={() => openAction(j, { kind: 'delete' })} className="text-red-600">

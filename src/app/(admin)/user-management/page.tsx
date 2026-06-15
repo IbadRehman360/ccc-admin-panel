@@ -29,13 +29,7 @@ import {
   useDeleteUserMutation,
   type UserRow,
 } from '@/store/api/usersApi';
-
-const formatDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-};
+import { extractError, formatDate } from '@/lib/format';
 
 const getStatusBadge = (status: 'Active' | 'Suspended') => {
   if (status === 'Active') return <Badge className="bg-green-600">Active</Badge>;
@@ -46,11 +40,6 @@ const getCompletionColor = (c: number) => {
   if (c >= 80) return 'bg-[#195440]';
   if (c >= 50) return 'bg-[#E1B047]';
   return 'bg-orange-500';
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
 };
 
 export default function UserManagementPage() {

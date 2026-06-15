@@ -24,16 +24,7 @@ import {
   type ChatRow,
   type ChatStatus,
 } from '@/store/api/chatsApi';
-
-const formatDateTime = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
-};
+import { extractError, formatDateTime } from '@/lib/format';
 
 const statusBadge = (s: ChatStatus | null) => {
   if (!s) return <Badge variant="outline">—</Badge>;

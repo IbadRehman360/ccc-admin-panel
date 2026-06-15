@@ -31,13 +31,7 @@ import {
   type AdminRow,
 } from '@/store/api/adminsApi';
 import { useAppSelector } from '@/store/hooks';
-
-const formatDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-};
+import { formatDate } from '@/lib/format';
 
 export default function AdminManagementPage() {
   const currentAdminId = useAppSelector((s) => s.auth.admin?.id);

@@ -24,13 +24,7 @@ import {
   type AdStatus,
   type PendingAd,
 } from '@/store/api/approvalsApi';
-
-const formatDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-};
+import { formatDate } from '@/lib/format';
 
 const statusColor = (s: AdStatus) => {
   switch (s) {

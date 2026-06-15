@@ -22,16 +22,7 @@ import {
   useResolveReportMutation,
   type ReportRow,
 } from '@/store/api/reportsApi';
-
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
-};
+import { extractError, formatDate } from '@/lib/format';
 
 export default function ReportManagementPage() {
   const [searchInput, setSearchInput] = useState('');

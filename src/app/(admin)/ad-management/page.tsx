@@ -21,20 +21,9 @@ import {
   type PendingAd,
   type AdStatus,
 } from '@/store/api/approvalsApi';
+import { extractError, formatDate } from '@/lib/format';
 
 type TabKey = 'pending' | 'active' | 'upcoming' | 'rejected';
-
-const formatDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
-};
 
 // Active = ACCEPTED + start <= today <= end
 // Upcoming = ACCEPTED + start > today

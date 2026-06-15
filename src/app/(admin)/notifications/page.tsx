@@ -22,6 +22,7 @@ import {
   type ScreenName,
   type SendBroadcastBody,
 } from '@/store/api/notificationsApi';
+import { extractError, formatDateTime } from '@/lib/format';
 
 const SCREEN_NAMES: ScreenName[] = [
   'PROFILE', 'NEWS', 'COMMUNITY_NOTIFICATION', 'COMMUNITY_POST',
@@ -29,16 +30,6 @@ const SCREEN_NAMES: ScreenName[] = [
   'USER_REQUESTS', 'USER_INVITES', 'GEO_FENCING', 'ADVERTISEMENT',
   'TRANSACTION_DEBIT', 'TRANSACTION_CREDIT',
 ];
-
-const formatDateTime = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
-};
 
 export default function NotificationsPage() {
   const [searchInput, setSearchInput] = useState('');

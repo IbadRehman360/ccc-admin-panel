@@ -1,9 +1,12 @@
 import { baseApi, type ApiResponse } from './baseApi';
 
+export type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'MODERATOR';
+
 export interface AdminUser {
   id: string;
   email: string;
   user_type: 'ADMIN';
+  admin_role: AdminRole;
   full_name: string | null;
   account_type: string;
   is_email_verified: boolean;

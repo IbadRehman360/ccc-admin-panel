@@ -30,23 +30,12 @@ import {
   type BusinessRow,
   type BusinessType,
 } from '@/store/api/businessesApi';
-
-const formatDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-};
+import { extractError, formatDate } from '@/lib/format';
 
 const statusBadge = (s: 'Active' | 'Pending' | 'Suspended') => {
   if (s === 'Active') return <Badge className="bg-green-600">Active</Badge>;
   if (s === 'Pending') return <Badge className="bg-yellow-500">Pending</Badge>;
   return <Badge variant="destructive">Suspended</Badge>;
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
 };
 
 export default function BusinessManagementPage() {

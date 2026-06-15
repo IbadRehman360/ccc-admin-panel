@@ -1,12 +1,15 @@
 import { baseApi, type ApiResponse } from './baseApi';
 
 export type CommunityPrivacy = 'PUBLIC' | 'PRIVATE';
+export type CommunityStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
 
 export interface CommunityRow {
   id: string;
   name: string;
   image: string | null;
   privacy: CommunityPrivacy;
+  status: CommunityStatus;
+  rejection_reason: string | null;
   member_count: number;
   member_limit: number;
   posts_count: number;
@@ -34,6 +37,10 @@ export interface CommunityStats {
   public: number;
   private: number;
   created_last_7d: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  suspended: number;
 }
 
 export interface CommunitiesListResponse {
@@ -49,6 +56,7 @@ export interface CommunitiesListResponse {
 export interface CommunitiesListQuery {
   search?: string;
   privacy?: CommunityPrivacy | 'all';
+  status?: CommunityStatus | 'all';
   sort_by?: 'date' | 'members' | 'name';
   page?: number;
   limit?: number;
@@ -57,10 +65,11 @@ export interface CommunitiesListQuery {
 export const communitiesApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     listCommunities: builder.query<CommunitiesListResponse, CommunitiesListQuery>({
-      query: ({ search, privacy, sort_by, page = 1, limit = 20 }) => {
+      query: ({ search, privacy, status, sort_by, page = 1, limit = 20 }) => {
         const params = new URLSearchParams();
         if (search) params.set('search', search);
         if (privacy && privacy !== 'all') params.set('privacy', privacy);
+        if (status && status !== 'all') params.set('status', status);
         if (sort_by) params.set('sort_by', sort_by);
         params.set('page', String(page));
         params.set('limit', String(limit));
@@ -68,6 +77,18 @@ export const communitiesApi = baseApi.injectEndpoints({
       },
       transformResponse: (response: ApiResponse<CommunitiesListResponse>) => response.data,
       providesTags: ['Community'],
+    }),
+    setCommunityStatus: builder.mutation<
+      CommunityRow,
+      { id: string; status: CommunityStatus; rejection_reason?: string }
+    >({
+      query: ({ id, status, rejection_reason }) => ({
+        url: `/admin/communities/${id}/status`,
+        method: 'PATCH',
+        body: { status, rejection_reason },
+      }),
+      transformResponse: (r: ApiResponse<CommunityRow>) => r.data,
+      invalidatesTags: ['Community'],
     }),
 
     getCommunityStats: builder.query<CommunityStats, void>({
@@ -98,5 +119,6 @@ export const {
   useListCommunitiesQuery,
   useGetCommunityStatsQuery,
   useGetCommunityDetailQuery,
+  useSetCommunityStatusMutation,
   useDeleteCommunityMutation,
 } = communitiesApi;

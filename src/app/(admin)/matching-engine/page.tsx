@@ -24,18 +24,7 @@ import {
   useUpdatePreferenceWeightsMutation,
   type MatchingUserRow,
 } from '@/store/api/matchingApi';
-
-const formatDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
-};
+import { extractError, formatDate } from '@/lib/format';
 
 export default function MatchingEnginePage() {
   return (

@@ -16,13 +16,7 @@ import {
   useGetTopLocationsQuery,
   useListGeoUsersQuery,
 } from '@/store/api/geofencingApi';
-
-const formatDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-};
+import { formatDate } from '@/lib/format';
 
 const mapUrl = (lat: string, lng: string) =>
   `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lng)}`;

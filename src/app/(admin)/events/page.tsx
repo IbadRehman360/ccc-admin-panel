@@ -28,14 +28,7 @@ import {
   type EventStatus,
   type EventPrivacy,
 } from '@/store/api/eventsApi';
-
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-
-const formatTime = (iso: string) =>
-  new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+import { extractError, formatDate, formatTime } from '@/lib/format';
 
 const statusBadge = (s: EventStatus) => {
   switch (s) {
@@ -44,11 +37,6 @@ const statusBadge = (s: EventStatus) => {
     case 'Past': return <Badge variant="secondary">Past</Badge>;
     case 'Cancelled': return <Badge variant="destructive">Cancelled</Badge>;
   }
-};
-
-const extractError = (err: unknown) => {
-  const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
 };
 
 export default function EventsPage() {

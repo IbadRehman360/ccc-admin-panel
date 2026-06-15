@@ -102,6 +102,18 @@ export const chatsApi = baseApi.injectEndpoints({
       transformResponse: (r: ApiResponse<{ id: number }>) => r.data,
       invalidatesTags: ['Community'],
     }),
+    warnUser: builder.mutation<{ user_id: string; sent: boolean }, { user_id: string; title?: string; message: string }>({
+      query: (body) => ({ url: '/admin/chats/warn', method: 'POST', body }),
+      transformResponse: (r: ApiResponse<{ user_id: string; sent: boolean }>) => r.data,
+    }),
+    blockChatUser: builder.mutation<{ user_id: string; blocked: boolean }, { user_id: string }>({
+      query: (body) => ({ url: '/admin/chats/block', method: 'POST', body }),
+      transformResponse: (r: ApiResponse<{ user_id: string; blocked: boolean }>) => r.data,
+    }),
+    unblockChatUser: builder.mutation<{ user_id: string; blocked: boolean }, { user_id: string }>({
+      query: (body) => ({ url: '/admin/chats/unblock', method: 'POST', body }),
+      transformResponse: (r: ApiResponse<{ user_id: string; blocked: boolean }>) => r.data,
+    }),
   }),
 });
 
@@ -110,4 +122,7 @@ export const {
   useGetChatStatsQuery,
   useGetChatMessagesQuery,
   useDeleteChatMutation,
+  useWarnUserMutation,
+  useBlockChatUserMutation,
+  useUnblockChatUserMutation,
 } = chatsApi;

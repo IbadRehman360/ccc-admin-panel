@@ -1,14 +1,20 @@
 'use client';
 
-import { Search, LogOut } from 'lucide-react';
+import { LogOut, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { UserAvatar } from './UserAvatar';
 import { useLogoutMutation } from '@/store/api/authApi';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { clearCredentials } from '@/store/slices/authSlice';
-import { getRefreshToken, clearTokens } from '@/lib/api/client';
+import {
+  getRefreshToken,
+  clearTokens,
+  API_URL,
+} from '@/lib/api/client';
+
+// Strip /api/v1 from the API URL so we can build /api/v1/docs ourselves
+const docsUrl = `${API_URL.replace(/\/api\/v1\/?$/, '')}/api/v1/docs`;
 
 export function Header() {
   const router = useRouter();
@@ -31,41 +37,38 @@ export function Header() {
   };
 
   const displayName = admin?.full_name || admin?.email || 'Admin User';
-  const displayRole = admin?.user_type === 'ADMIN' ? 'Super Admin' : 'Admin';
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 fixed top-0 right-0 left-64 z-50">
-      <div className="h-full px-6 flex items-center justify-between">
-        <div className="flex-1 max-w-xl">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <Input
-              type="search"
-              placeholder="Search users, businesses, communities..."
-              className="pl-10 bg-gray-50"
-            />
+      <div className="h-full px-6 flex items-center justify-end gap-4">
+        <a
+          href={docsUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-[#195440] px-3 py-2 rounded-md hover:bg-gray-50"
+          title="Open Swagger API docs in new tab"
+        >
+          <FileText className="w-4 h-4" />
+          API Docs
+        </a>
+
+        <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 rounded-lg">
+          <UserAvatar name={displayName} size="sm" />
+          <div className="text-sm">
+            <div className="font-medium leading-tight">{displayName}</div>
+            <div className="text-xs text-gray-500">Admin</div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 rounded-lg">
-            <UserAvatar name={displayName} size="sm" />
-            <div className="text-sm">
-              <div className="font-medium">{displayName}</div>
-              <div className="text-xs text-gray-500">{displayRole}</div>
-            </div>
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleLogout}
-            className="gap-2"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleLogout}
+          className="gap-2"
+        >
+          <LogOut className="w-4 h-4" />
+          Logout
+        </Button>
       </div>
     </header>
   );
