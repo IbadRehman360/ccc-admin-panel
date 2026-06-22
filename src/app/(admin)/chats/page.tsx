@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Search, Filter, Eye, Trash2, MessageSquare, Ban, MoreVertical,
-  Loader2, Paperclip, Clock, AlertCircle,
+  Loader2, Paperclip, Clock, AlertTriangle, Send,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,8 @@ import {
   useGetChatStatsQuery,
   useGetChatMessagesQuery,
   useDeleteChatMutation,
+  useWarnUserMutation,
+  useBlockChatUserMutation,
   type ChatRow,
   type ChatStatus,
 } from '@/store/api/chatsApi';
@@ -51,6 +53,54 @@ export default function ChatsPage() {
   const [selected, setSelected] = useState<ChatRow | null>(null);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Warn / Block dialog state
+  const [showWarn, setShowWarn] = useState(false);
+  const [showBlock, setShowBlock] = useState(false);
+  const [targetUserId, setTargetUserId] = useState<string | null>(null);
+  const [targetUserName, setTargetUserName] = useState('');
+  const [warnTitle, setWarnTitle] = useState('Admin Warning');
+  const [warnMessage, setWarnMessage] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const [warnUser, { isLoading: warning }] = useWarnUserMutation();
+  const [blockUser, { isLoading: blocking }] = useBlockChatUserMutation();
+
+  const openWarn = (userId: string, name: string) => {
+    setTargetUserId(userId);
+    setTargetUserName(name);
+    setWarnTitle('Admin Warning');
+    setWarnMessage('');
+    setActionError(null);
+    setShowWarn(true);
+  };
+  const openBlock = (userId: string, name: string) => {
+    setTargetUserId(userId);
+    setTargetUserName(name);
+    setActionError(null);
+    setShowBlock(true);
+  };
+
+  const handleWarn = async () => {
+    if (!targetUserId) return;
+    setActionError(null);
+    try {
+      await warnUser({ user_id: targetUserId, title: warnTitle, message: warnMessage }).unwrap();
+      setShowWarn(false);
+    } catch (e) {
+      setActionError(extractError(e));
+    }
+  };
+  const handleBlock = async () => {
+    if (!targetUserId) return;
+    setActionError(null);
+    try {
+      await blockUser({ user_id: targetUserId }).unwrap();
+      setShowBlock(false);
+    } catch (e) {
+      setActionError(extractError(e));
+    }
+  };
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,13 +143,6 @@ export default function ChatsPage() {
         <StatCard label="Total Messages" value={stats?.total_messages} icon={MessageSquare} color="text-blue-600" />
         <StatCard label="Blocked Pairs" value={stats?.blocked_pairs} icon={Ban} color="text-red-600" />
         <StatCard label="Last 7d" value={stats?.recent_7d} icon={Clock} color="text-[#E1B047]" />
-      </div>
-
-      <div className="flex items-start gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-900">
-        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-        <span>
-          <strong>Warn / Block</strong> actions need schema migration. Use User Management to suspend abusive users for now.
-        </span>
       </div>
 
       <Card>
@@ -179,6 +222,40 @@ export default function ChatsPage() {
                           <DropdownMenuItem onClick={() => openMessages(c)}>
                             <Eye className="w-4 h-4 mr-2" />View Messages
                           </DropdownMenuItem>
+
+                          {c.user_one && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => openWarn(c.user_one!.id, c.user_one!.full_name || c.user_one!.email)}
+                              >
+                                <AlertTriangle className="w-4 h-4 mr-2 text-yellow-600" />
+                                Warn {c.user_one.full_name || c.user_one.email}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => openBlock(c.user_one!.id, c.user_one!.full_name || c.user_one!.email)}
+                                className="text-orange-600"
+                              >
+                                <Ban className="w-4 h-4 mr-2" />Block {c.user_one.full_name || c.user_one.email}
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {c.user_two && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => openWarn(c.user_two!.id, c.user_two!.full_name || c.user_two!.email)}
+                              >
+                                <AlertTriangle className="w-4 h-4 mr-2 text-yellow-600" />
+                                Warn {c.user_two.full_name || c.user_two.email}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => openBlock(c.user_two!.id, c.user_two!.full_name || c.user_two!.email)}
+                                className="text-orange-600"
+                              >
+                                <Ban className="w-4 h-4 mr-2" />Block {c.user_two.full_name || c.user_two.email}
+                              </DropdownMenuItem>
+                            </>
+                          )}
+
                           <DropdownMenuItem onClick={() => openDelete(c)} className="text-red-600">
                             <Trash2 className="w-4 h-4 mr-2" />Delete Chat
                           </DropdownMenuItem>
@@ -253,6 +330,70 @@ export default function ChatsPage() {
             <Button variant="destructive" onClick={confirmDelete} disabled={deleting || !reason.trim()}>
               <Trash2 className="w-4 h-4 mr-2" />
               {deleting ? 'Deleting...' : 'Delete Permanently'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Warn dialog */}
+      <Dialog open={showWarn} onOpenChange={setShowWarn}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Warn User</DialogTitle>
+            <DialogDescription>
+              Send a notification warning to <strong>{targetUserName}</strong>. They&apos;ll see it in their mobile notifications.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 space-y-3">
+            <div>
+              <Label htmlFor="warn-title">Notification Title</Label>
+              <Input id="warn-title" value={warnTitle} onChange={(e) => setWarnTitle(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="warn-msg">Warning Message *</Label>
+              <Textarea
+                id="warn-msg"
+                placeholder="e.g. Your recent messages violated our community guidelines. Please review the rules."
+                value={warnMessage}
+                onChange={(e) => setWarnMessage(e.target.value)}
+                rows={4}
+              />
+            </div>
+            {actionError && (
+              <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                {actionError}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowWarn(false)}>Cancel</Button>
+            <Button onClick={handleWarn} disabled={warning || !warnMessage.trim()} className="bg-yellow-600 hover:bg-yellow-700">
+              <Send className="w-4 h-4 mr-2" />
+              {warning ? 'Sending...' : 'Send Warning'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Block dialog */}
+      <Dialog open={showBlock} onOpenChange={setShowBlock}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Block User</DialogTitle>
+            <DialogDescription>
+              Add <strong>{targetUserName}</strong> to the admin block list. The mobile app will treat them as a blocked user for future chats. This does not suspend their account.
+            </DialogDescription>
+          </DialogHeader>
+          {actionError && (
+            <div className="mx-6 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+              {actionError}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBlock(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleBlock} disabled={blocking}>
+              <Ban className="w-4 h-4 mr-2" />
+              {blocking ? 'Blocking...' : 'Block User'}
             </Button>
           </DialogFooter>
         </DialogContent>

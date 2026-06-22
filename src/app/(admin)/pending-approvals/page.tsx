@@ -21,9 +21,21 @@ import {
   useGetAdApprovalStatsQuery,
   useListPendingAdsQuery,
   useUpdateAdStatusMutation,
+  useGetClaimsStatsQuery,
+  useListClaimsQuery,
+  useGetClaimQuery,
+  useApproveClaimMutation,
+  useRejectClaimMutation,
   type AdStatus,
   type PendingAd,
+  type BusinessClaim,
+  type ClaimStatus,
 } from '@/store/api/approvalsApi';
+import {
+  useListCommunitiesQuery,
+  useSetCommunityStatusMutation,
+  type CommunityRow,
+} from '@/store/api/communitiesApi';
 import { formatDate } from '@/lib/format';
 
 const statusColor = (s: AdStatus) => {
@@ -64,17 +76,11 @@ export default function PendingApprovalsPage() {
         </TabsContent>
 
         <TabsContent value="claims">
-          <NotImplementedTab
-            title="Business Claims"
-            reason="Requires a new business_claim table in the database (claimant info, submitted documents, status). Not yet migrated."
-          />
+          <BusinessClaimsTab />
         </TabsContent>
 
         <TabsContent value="communities">
-          <NotImplementedTab
-            title="Community Approvals"
-            reason="Requires a status field on the community table (PENDING/APPROVED/REJECTED). Not yet migrated."
-          />
+          <CommunityApprovalsTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -443,3 +449,575 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   );
 }
+
+// ── Business Claims Tab ─────────────────────────────────────────────────
+// Each row = a mobile signup submission awaiting review. Approving flips it
+// to APPROVED so the business appears in mobile search results. Rejecting
+// keeps it hidden + records the reason.
+
+function BusinessClaimsTab() {
+  const [filterStatus, setFilterStatus] = useState<ClaimStatus>('PENDING');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+
+  const { data: stats } = useGetClaimsStatsQuery();
+  const { data: list, isFetching } = useListClaimsQuery({
+    status: filterStatus,
+    search,
+    page,
+    limit: 25,
+  });
+
+  const [approve, { isLoading: approving }] = useApproveClaimMutation();
+  const [reject, { isLoading: rejecting }] = useRejectClaimMutation();
+
+  const [showView, setShowView] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [selected, setSelected] = useState<BusinessClaim | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const extractError = (err: unknown) => {
+    const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
+    return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
+  };
+
+  const handleApprove = async (id: string) => {
+    setError(null);
+    try {
+      await approve(id).unwrap();
+    } catch (e) {
+      setError(extractError(e));
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selected) return;
+    setError(null);
+    try {
+      await reject({ id: selected.id, reason: rejectReason }).unwrap();
+      setShowReject(false);
+      setRejectReason('');
+      setSelected(null);
+    } catch (e) {
+      setError(extractError(e));
+    }
+  };
+
+  const rows = list?.data ?? [];
+  const totalPages = list?.pagination.total_pages ?? 1;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Pending Review" value={stats?.pending} icon={Clock} color="text-yellow-600" />
+        <StatCard label="Approved" value={stats?.approved} icon={CheckCircle} color="text-green-600" />
+        <StatCard label="Rejected" value={stats?.rejected} icon={XCircle} color="text-red-600" />
+        <StatCard label="New (Last 7d)" value={stats?.pending_last_7d} icon={Building2} color="text-blue-600" />
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Business Submissions</CardTitle>
+          {isFetching && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={(e) => { e.preventDefault(); setSearch(searchInput); setPage(1); }}
+            className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6"
+          >
+            <div className="md:col-span-2 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search by business name, EIN, claimant email..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v as ClaimStatus); setPage(1); }}>
+              <SelectTrigger><Filter className="w-4 h-4 mr-2" /><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PENDING">Pending Review</SelectItem>
+                <SelectItem value="APPROVED">Approved</SelectItem>
+                <SelectItem value="REJECTED">Rejected</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="submit" className="bg-[#195440] hover:bg-[#195440]/90">Search</Button>
+          </form>
+
+          {error && (
+            <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-4">
+              {error}
+            </div>
+          )}
+
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Business</TableHead>
+                  <TableHead>Claimant</TableHead>
+                  <TableHead>Niche / Industry</TableHead>
+                  <TableHead>Owner?</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Submitted</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                      No {filterStatus.toLowerCase()} business submissions.
+                    </TableCell>
+                  </TableRow>
+                ) : rows.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div className="font-medium">{c.name || '—'}</div>
+                        <div className="text-xs text-gray-500">
+                          {[c.city, c.state].filter(Boolean).join(', ') || '—'}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div>{c.claimant.full_name || '—'}</div>
+                        <div className="text-xs text-gray-500">{c.claimant.email}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs">
+                        {c.business_niche && <Badge variant="outline" className="mr-1">{c.business_niche}</Badge>}
+                        {c.industry && <span className="text-gray-600">{c.industry}</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={c.business_owner ? 'default' : 'outline'} className={c.business_owner ? 'bg-[#195440]' : ''}>
+                        {c.business_owner ? 'Yes' : 'No'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {c.review_status === 'PENDING' && <Badge className="bg-yellow-600">Pending</Badge>}
+                      {c.review_status === 'APPROVED' && <Badge className="bg-green-600">Approved</Badge>}
+                      {c.review_status === 'REJECTED' && <Badge variant="destructive">Rejected</Badge>}
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600">{formatDate(c.submitted_at)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => { setSelected(c); setShowView(true); }}
+                        >
+                          <Eye className="w-4 h-4 mr-1" />View
+                        </Button>
+                        {c.review_status === 'PENDING' && (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => handleApprove(c.id)}
+                              disabled={approving}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" />Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => { setSelected(c); setRejectReason(''); setShowReject(true); }}
+                            >
+                              <XCircle className="w-4 h-4 mr-1" />Reject
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {list && totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-gray-500">Page {list.pagination.page} of {totalPages} — {list.pagination.total.toLocaleString()} total</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <ClaimDetailDialog
+        open={showView}
+        onClose={() => setShowView(false)}
+        claimId={selected?.id ?? null}
+        onApprove={(id) => { handleApprove(id); setShowView(false); }}
+        onReject={() => { setShowView(false); setRejectReason(''); setShowReject(true); }}
+      />
+
+      <Dialog open={showReject} onOpenChange={(o) => !o && setShowReject(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Business Submission</DialogTitle>
+            <DialogDescription>
+              Reject <strong>{selected?.name}</strong>? They&apos;ll see the reason and can re-submit.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 space-y-2">
+            <Label htmlFor="rej-reason">Reason *</Label>
+            <Textarea
+              id="rej-reason"
+              placeholder="e.g. EIN number doesn't match, business documents unclear..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReject(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleReject} disabled={rejecting || !rejectReason.trim()}>
+              <XCircle className="w-4 h-4 mr-2" />
+              {rejecting ? 'Rejecting...' : 'Reject Submission'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ClaimDetailDialog({
+  open, onClose, claimId, onApprove, onReject,
+}: {
+  open: boolean;
+  onClose: () => void;
+  claimId: string | null;
+  onApprove: (id: string) => void;
+  onReject: () => void;
+}) {
+  const { data: claim, isLoading } = useGetClaimQuery(claimId!, { skip: !claimId || !open });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Business Submission Review</DialogTitle>
+          <DialogDescription>
+            Full submission details + uploaded documents
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading || !claim ? (
+          <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        ) : (
+          <div className="px-6 space-y-5">
+            <section>
+              <h3 className="font-semibold text-sm mb-2 text-gray-700">Business</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Name" value={claim.name || '—'} />
+                <Field label="EIN" value={claim.ein_number || '—'} />
+                <Field label="Industry" value={claim.industry || '—'} />
+                <Field label="Owner?" value={claim.business_owner ? 'Yes' : 'No'} />
+                <Field label="Website" value={
+                  claim.business_url ? (
+                    <a href={claim.business_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
+                      {claim.business_url} <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : '—'
+                } />
+                <Field label="Submitted" value={formatDate(claim.submitted_at)} />
+              </div>
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-sm mb-2 text-gray-700">About</h3>
+              <p className="text-sm bg-gray-50 p-3 rounded-lg">{claim.about || '—'}</p>
+              {claim.mission && (
+                <p className="text-sm bg-gray-50 p-3 rounded-lg mt-2">
+                  <span className="font-medium">Mission: </span>{claim.mission}
+                </p>
+              )}
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-sm mb-2 text-gray-700">Location</h3>
+              <Field label="Address" value={[claim.address, claim.city, claim.state, claim.zip_code].filter(Boolean).join(', ') || '—'} />
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-sm mb-2 text-gray-700">Claimant</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Name" value={claim.claimant.full_name || '—'} />
+                <Field label="Email" value={claim.claimant.email || '—'} />
+                <Field label="Phone" value={claim.claimant.contact_phone || '—'} />
+                <Field label="Account Type" value={claim.claimant.account_type || '—'} />
+              </div>
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-sm mb-2 text-gray-700">Documents ({claim.documents.length})</h3>
+              {claim.documents.length === 0 ? (
+                <p className="text-sm text-gray-500">No documents uploaded.</p>
+              ) : (
+                <div className="space-y-2">
+                  {claim.documents.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between border rounded-lg p-3 bg-gray-50">
+                      <div className="text-sm">
+                        <div className="font-medium">{d.name}</div>
+                        <div className="text-xs text-gray-500">{d.type} · {formatDate(d.uploaded_at)}</div>
+                      </div>
+                      <a href={d.file_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1">
+                        Open <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {claim.review_status !== 'PENDING' && (
+              <section className="border-t pt-3">
+                <h3 className="font-semibold text-sm mb-2 text-gray-700">Review Outcome</h3>
+                <Field label="Status" value={claim.review_status} />
+                {claim.rejection_reason && <Field label="Rejection Reason" value={claim.rejection_reason} />}
+                {claim.reviewed_at && <Field label="Reviewed At" value={formatDate(claim.reviewed_at)} />}
+              </section>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          {claim?.review_status === 'PENDING' && (
+            <>
+              <Button variant="destructive" onClick={onReject}>
+                <XCircle className="w-4 h-4 mr-2" />Reject
+              </Button>
+              <Button onClick={() => onApprove(claim.id)} className="bg-green-600 hover:bg-green-700">
+                <CheckCircle className="w-4 h-4 mr-2" />Approve
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Community Approvals Tab ─────────────────────────────────────────────
+// Lists communities with status=PENDING. Admin reviews and approves/rejects.
+// After approval, the community becomes visible in mobile community listings.
+
+function CommunityApprovalsTab() {
+  const [filterStatus, setFilterStatus] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'all'>('PENDING');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+
+  const { data: list, isFetching } = useListCommunitiesQuery({
+    status: filterStatus === 'all' ? undefined : filterStatus,
+    search,
+    page,
+    limit: 25,
+  });
+
+  const [setStatus, { isLoading: updating }] = useSetCommunityStatusMutation();
+
+  const [showReject, setShowReject] = useState(false);
+  const [target, setTarget] = useState<CommunityRow | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const extractError = (err: unknown) => {
+    const msg = (err as { data?: { message?: string | string[] } })?.data?.message;
+    return Array.isArray(msg) ? msg.join(', ') : msg || 'Something went wrong.';
+  };
+
+  const handleApprove = async (id: string) => {
+    setError(null);
+    try {
+      await setStatus({ id, status: 'APPROVED' }).unwrap();
+    } catch (e) {
+      setError(extractError(e));
+    }
+  };
+
+  const handleReject = async () => {
+    if (!target) return;
+    setError(null);
+    try {
+      await setStatus({ id: target.id, status: 'REJECTED', rejection_reason: rejectReason }).unwrap();
+      setShowReject(false);
+      setTarget(null);
+      setRejectReason('');
+    } catch (e) {
+      setError(extractError(e));
+    }
+  };
+
+  const rows = list?.data ?? [];
+  const totalPages = list?.pagination.total_pages ?? 1;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Community Submissions</CardTitle>
+          {isFetching && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={(e) => { e.preventDefault(); setSearch(searchInput); setPage(1); }}
+            className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6"
+          >
+            <div className="md:col-span-2 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search by name or creator..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v as typeof filterStatus); setPage(1); }}>
+              <SelectTrigger><Filter className="w-4 h-4 mr-2" /><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PENDING">Pending Review</SelectItem>
+                <SelectItem value="APPROVED">Approved</SelectItem>
+                <SelectItem value="REJECTED">Rejected</SelectItem>
+                <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="submit" className="bg-[#195440] hover:bg-[#195440]/90">Search</Button>
+          </form>
+
+          {error && (
+            <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-4">
+              {error}
+            </div>
+          )}
+
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Community</TableHead>
+                  <TableHead>Creator</TableHead>
+                  <TableHead>Privacy</TableHead>
+                  <TableHead>Members</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                      No {filterStatus === 'all' ? '' : filterStatus.toLowerCase()} communities.
+                    </TableCell>
+                  </TableRow>
+                ) : rows.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div className="font-medium">{c.name}</div>
+                        <div className="text-xs text-gray-500">Limit: {c.member_limit}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div>{c.creator.full_name || '—'}</div>
+                        <div className="text-xs text-gray-500">{c.creator.email}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{c.privacy}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">{c.member_count} / {c.member_limit}</TableCell>
+                    <TableCell>
+                      {c.status === 'PENDING' && <Badge className="bg-yellow-600">Pending</Badge>}
+                      {c.status === 'APPROVED' && <Badge className="bg-green-600">Approved</Badge>}
+                      {c.status === 'REJECTED' && <Badge variant="destructive">Rejected</Badge>}
+                      {c.status === 'SUSPENDED' && <Badge variant="secondary">Suspended</Badge>}
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600">{formatDate(c.created_at)}</TableCell>
+                    <TableCell className="text-right">
+                      {c.status === 'PENDING' && (
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleApprove(c.id)}
+                            disabled={updating}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <CheckCircle className="w-4 h-4 mr-1" />Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => { setTarget(c); setRejectReason(''); setShowReject(true); }}
+                          >
+                            <XCircle className="w-4 h-4 mr-1" />Reject
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {list && totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-gray-500">Page {list.pagination.page} of {totalPages} — {list.pagination.total.toLocaleString()} total</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showReject} onOpenChange={(o) => !o && setShowReject(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Community</DialogTitle>
+            <DialogDescription>
+              Reject <strong>{target?.name}</strong>? The creator will see this reason.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 space-y-2">
+            <Label htmlFor="comm-rej-reason">Reason *</Label>
+            <Textarea
+              id="comm-rej-reason"
+              placeholder="e.g. Community guidelines not met, name inappropriate..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReject(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleReject} disabled={updating || !rejectReason.trim()}>
+              <XCircle className="w-4 h-4 mr-2" />
+              {updating ? 'Rejecting...' : 'Reject'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+

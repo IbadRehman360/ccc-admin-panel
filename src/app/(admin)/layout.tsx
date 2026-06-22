@@ -9,7 +9,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Sidebar />
         <div className="ml-64">
           <Header />
-          <main className="pt-16 p-6">{children}</main>
+          <main className="pt-24 p-6">{children}</main>
         </div>
       </div>
     </AuthGate>

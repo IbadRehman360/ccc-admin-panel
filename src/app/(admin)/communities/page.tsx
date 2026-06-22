@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   Search, Filter, Eye, Trash2, Users, FileText, Calendar,
   MoreVertical, Lock, Globe, Loader2, MessageSquare, UserPlus,
-  AlertCircle,
+  CheckCircle, XCircle, Ban,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -22,8 +22,10 @@ import {
   useGetCommunityStatsQuery,
   useGetCommunityDetailQuery,
   useDeleteCommunityMutation,
+  useSetCommunityStatusMutation,
   type CommunityRow,
   type CommunityPrivacy,
+  type CommunityStatus,
 } from '@/store/api/communitiesApi';
 import { extractError, formatDate } from '@/lib/format';
 
@@ -31,15 +33,25 @@ export default function CommunitiesPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [privacyFilter, setPrivacyFilter] = useState<CommunityPrivacy | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<CommunityStatus | 'all'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'members' | 'name'>('date');
   const [page, setPage] = useState(1);
 
   const { data: stats } = useGetCommunityStatsQuery();
   const { data: list, isFetching } = useListCommunitiesQuery({
-    search, privacy: privacyFilter, sort_by: sortBy, page, limit: 25,
+    search, privacy: privacyFilter, status: statusFilter, sort_by: sortBy, page, limit: 25,
   });
 
   const [deleteComm, { isLoading: deleting }] = useDeleteCommunityMutation();
+  const [setStatus, { isLoading: settingStatus }] = useSetCommunityStatusMutation();
+
+  const quickSetStatus = async (id: string, status: CommunityStatus) => {
+    try {
+      await setStatus({ id, status }).unwrap();
+    } catch {
+      /* error shown via global handler */
+    }
+  };
 
   const [showProfile, setShowProfile] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -151,6 +163,16 @@ export default function CommunitiesPage() {
                 <SelectItem value="PRIVATE">Private</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as CommunityStatus | 'all'); setPage(1); }}>
+              <SelectTrigger><Filter className="w-4 h-4 mr-2" /><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="APPROVED">Approved</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="REJECTED">Rejected</SelectItem>
+                <SelectItem value="SUSPENDED">Suspended</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
               <SelectTrigger><SelectValue placeholder="Sort" /></SelectTrigger>
               <SelectContent>
@@ -168,6 +190,7 @@ export default function CommunitiesPage() {
                 <TableRow>
                   <TableHead>Community</TableHead>
                   <TableHead>Creator</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Privacy</TableHead>
                   <TableHead>Members</TableHead>
                   <TableHead>Posts</TableHead>
@@ -178,7 +201,7 @@ export default function CommunitiesPage() {
               </TableHeader>
               <TableBody>
                 {rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-gray-500">No communities found</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-500">No communities found</TableCell></TableRow>
                 ) : rows.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell>
@@ -196,6 +219,12 @@ export default function CommunitiesPage() {
                         <div>{c.creator.full_name || '—'}</div>
                         <div className="text-xs text-gray-500">{c.creator.email || '—'}</div>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {c.status === 'APPROVED' && <Badge className="bg-green-600">Approved</Badge>}
+                      {c.status === 'PENDING' && <Badge className="bg-yellow-600">Pending</Badge>}
+                      {c.status === 'REJECTED' && <Badge variant="destructive">Rejected</Badge>}
+                      {c.status === 'SUSPENDED' && <Badge variant="secondary">Suspended</Badge>}
                     </TableCell>
                     <TableCell>
                       {c.privacy === 'PUBLIC'
@@ -220,6 +249,34 @@ export default function CommunitiesPage() {
                           <DropdownMenuItem onClick={() => openProfile(c)}>
                             <Eye className="w-4 h-4 mr-2" />View Details
                           </DropdownMenuItem>
+
+                          {/* Status transitions — what's available depends on current status */}
+                          {c.status === 'PENDING' && (
+                            <>
+                              <DropdownMenuItem onClick={() => quickSetStatus(c.id, 'APPROVED')} disabled={settingStatus}>
+                                <CheckCircle className="w-4 h-4 mr-2 text-green-600" />Approve
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => quickSetStatus(c.id, 'REJECTED')} disabled={settingStatus} className="text-red-600">
+                                <XCircle className="w-4 h-4 mr-2" />Reject
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {c.status === 'APPROVED' && (
+                            <DropdownMenuItem onClick={() => quickSetStatus(c.id, 'SUSPENDED')} disabled={settingStatus} className="text-orange-600">
+                              <Ban className="w-4 h-4 mr-2" />Suspend
+                            </DropdownMenuItem>
+                          )}
+                          {c.status === 'SUSPENDED' && (
+                            <DropdownMenuItem onClick={() => quickSetStatus(c.id, 'APPROVED')} disabled={settingStatus}>
+                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" />Reactivate
+                            </DropdownMenuItem>
+                          )}
+                          {c.status === 'REJECTED' && (
+                            <DropdownMenuItem onClick={() => quickSetStatus(c.id, 'APPROVED')} disabled={settingStatus}>
+                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" />Approve
+                            </DropdownMenuItem>
+                          )}
+
                           <DropdownMenuItem onClick={() => openDelete(c)} className="text-red-600">
                             <Trash2 className="w-4 h-4 mr-2" />Delete
                           </DropdownMenuItem>
@@ -244,12 +301,6 @@ export default function CommunitiesPage() {
             </div>
           )}
 
-          <div className="mt-4 flex items-start gap-2 max-w-2xl bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-900">
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <span>
-              <strong>Suspend</strong> not available — community model has no status field. Add <code className="bg-yellow-100 px-1 rounded">community.status</code> to enable.
-            </span>
-          </div>
         </CardContent>
       </Card>
 

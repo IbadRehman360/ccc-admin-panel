@@ -6,22 +6,66 @@ export const API_URL =
 export const TOKEN_KEY = 'ccc_admin_access_token';
 export const REFRESH_KEY = 'ccc_admin_refresh_token';
 
-export const getAccessToken = () =>
-  typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+// Some browser contexts (VS Code embedded preview, sandboxed iframes,
+// strict privacy modes) deny access to localStorage and *throw* on read.
+// We feature-detect once; if denied, fall back to in-memory storage so the
+// app at least works for the current tab session.
+const memoryStore: Record<string, string> = {};
 
-export const getRefreshToken = () =>
-  typeof window !== 'undefined' ? localStorage.getItem(REFRESH_KEY) : null;
+let _useLocalStorage: boolean | null = null;
+const canUseLocalStorage = (): boolean => {
+  if (_useLocalStorage !== null) return _useLocalStorage;
+  if (typeof window === 'undefined') return (_useLocalStorage = false);
+  try {
+    const probe = '__ccc_probe__';
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    _useLocalStorage = true;
+  } catch {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[ccc] localStorage is blocked; falling back to in-memory token storage (tokens cleared on tab close).',
+    );
+    _useLocalStorage = false;
+  }
+  return _useLocalStorage;
+};
+
+const safeGet = (key: string): string | null => {
+  if (typeof window === 'undefined') return null;
+  if (canUseLocalStorage()) {
+    try { return window.localStorage.getItem(key); } catch { /* fall through */ }
+  }
+  return memoryStore[key] ?? null;
+};
+
+const safeSet = (key: string, value: string) => {
+  if (typeof window === 'undefined') return;
+  if (canUseLocalStorage()) {
+    try { window.localStorage.setItem(key, value); return; } catch { /* fall through */ }
+  }
+  memoryStore[key] = value;
+};
+
+const safeRemove = (key: string) => {
+  if (typeof window === 'undefined') return;
+  if (canUseLocalStorage()) {
+    try { window.localStorage.removeItem(key); return; } catch { /* fall through */ }
+  }
+  delete memoryStore[key];
+};
+
+export const getAccessToken = () => safeGet(TOKEN_KEY);
+export const getRefreshToken = () => safeGet(REFRESH_KEY);
 
 export const setTokens = (access: string, refresh: string) => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
+  safeSet(TOKEN_KEY, access);
+  safeSet(REFRESH_KEY, refresh);
 };
 
 export const clearTokens = () => {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  safeRemove(TOKEN_KEY);
+  safeRemove(REFRESH_KEY);
 };
 
 export const apiClient = axios.create({

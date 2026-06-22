@@ -198,15 +198,31 @@ export default function DashboardPage() {
                   data={businessCategoryData}
                   cx="50%" cy="50%"
                   labelLine={false}
-                  label={({ category, percent }) => `${category}: ${((percent ?? 0) * 100).toFixed(0)}%`}
+                  // Only show the slice label on the pie when the slice is at
+                  // least 5% — otherwise tiny/0% slices stack on top of each
+                  // other. All categories are still visible in the legend.
+                  label={({ category, percent }) =>
+                    (percent ?? 0) >= 0.05
+                      ? `${category}: ${((percent ?? 0) * 100).toFixed(0)}%`
+                      : ''
+                  }
                   outerRadius={100}
                   dataKey="count"
+                  nameKey="category"
                 >
                   {businessCategoryData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(value, name) => [`${value}`, String(name)]} />
+                <Legend
+                  verticalAlign="bottom"
+                  height={36}
+                  formatter={(value, entry) => {
+                    const payload = entry?.payload as { count?: number } | undefined;
+                    return `${value} (${payload?.count ?? 0})`;
+                  }}
+                />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Search, Filter, Eye, Trash2, MessageSquare, Heart, FileText,
-  Image as ImageIcon, MoreVertical, Loader2,
+  Image as ImageIcon, MoreVertical, Loader2, Flag, EyeOff, CheckCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -22,7 +22,9 @@ import {
   useGetPostStatsQuery,
   useGetPostDetailQuery,
   useDeletePostMutation,
+  useSetPostStatusMutation,
   type PostRow,
+  type PostStatus,
 } from '@/store/api/postsApi';
 import { extractError, formatDate } from '@/lib/format';
 
@@ -30,15 +32,25 @@ export default function PostsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [mediaFilter, setMediaFilter] = useState<'all' | 'text' | 'image'>('all');
-  const [sortBy, setSortBy] = useState<'date' | 'likes' | 'comments'>('date');
+  const [statusFilter, setStatusFilter] = useState<PostStatus | 'all'>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'likes' | 'comments' | 'reports'>('date');
   const [page, setPage] = useState(1);
 
   const { data: stats } = useGetPostStatsQuery();
   const { data: list, isFetching } = useListPostsQuery({
-    search, media: mediaFilter, sort_by: sortBy, page, limit: 25,
+    search, media: mediaFilter, status: statusFilter, sort_by: sortBy, page, limit: 25,
   });
 
   const [deletePost, { isLoading: deleting }] = useDeletePostMutation();
+  const [setPostStatus, { isLoading: settingStatus }] = useSetPostStatusMutation();
+
+  const quickSetStatus = async (id: string, status: PostStatus) => {
+    try {
+      await setPostStatus({ id, status }).unwrap();
+    } catch {
+      /* silent */
+    }
+  };
 
   const [showProfile, setShowProfile] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -105,8 +117,17 @@ export default function PostsPage() {
                 className="pl-10"
               />
             </div>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as PostStatus | 'all'); setPage(1); }}>
+              <SelectTrigger><Filter className="w-4 h-4 mr-2" /><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="ACTIVE">Active</SelectItem>
+                <SelectItem value="FLAGGED">Flagged</SelectItem>
+                <SelectItem value="REMOVED">Removed</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={mediaFilter} onValueChange={(v) => { setMediaFilter(v as typeof mediaFilter); setPage(1); }}>
-              <SelectTrigger><Filter className="w-4 h-4 mr-2" /><SelectValue placeholder="Media" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Media" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Media</SelectItem>
                 <SelectItem value="text">Text Only</SelectItem>
@@ -119,6 +140,7 @@ export default function PostsPage() {
                 <SelectItem value="date">Newest</SelectItem>
                 <SelectItem value="likes">Most Likes</SelectItem>
                 <SelectItem value="comments">Most Comments</SelectItem>
+                <SelectItem value="reports">Most Reports</SelectItem>
               </SelectContent>
             </Select>
             <Button type="submit" className="bg-[#195440] hover:bg-[#195440]/90">Search</Button>
@@ -132,15 +154,16 @@ export default function PostsPage() {
                   <TableHead>Author</TableHead>
                   <TableHead>Community</TableHead>
                   <TableHead>Media</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Reports</TableHead>
                   <TableHead>Likes</TableHead>
-                  <TableHead>Comments</TableHead>
                   <TableHead>Posted</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-gray-500">No posts found</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-500">No posts found</TableCell></TableRow>
                 ) : rows.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell>
@@ -172,8 +195,17 @@ export default function PostsPage() {
                           : <><FileText className="w-3 h-3 mr-1" />Text</>}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      {p.status === 'ACTIVE' && <Badge className="bg-green-600">Active</Badge>}
+                      {p.status === 'FLAGGED' && <Badge className="bg-orange-600">Flagged</Badge>}
+                      {p.status === 'REMOVED' && <Badge variant="destructive">Removed</Badge>}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {p.report_count > 0 ? (
+                        <Badge variant="outline" className="border-red-500 text-red-700">{p.report_count}</Badge>
+                      ) : <span className="text-gray-400">0</span>}
+                    </TableCell>
                     <TableCell className="text-sm">{p.total_likes}</TableCell>
-                    <TableCell className="text-sm">{p.total_comments}</TableCell>
                     <TableCell className="text-sm text-gray-600">{formatDate(p.created_at)}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
@@ -186,8 +218,36 @@ export default function PostsPage() {
                           <DropdownMenuItem onClick={() => openProfile(p)}>
                             <Eye className="w-4 h-4 mr-2" />View Post
                           </DropdownMenuItem>
+
+                          {/* Moderation: depends on current status */}
+                          {p.status === 'ACTIVE' && (
+                            <>
+                              <DropdownMenuItem onClick={() => quickSetStatus(p.id, 'FLAGGED')} disabled={settingStatus} className="text-orange-600">
+                                <Flag className="w-4 h-4 mr-2" />Flag for Review
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => quickSetStatus(p.id, 'REMOVED')} disabled={settingStatus} className="text-red-600">
+                                <EyeOff className="w-4 h-4 mr-2" />Soft-Remove (hide from mobile)
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {p.status === 'FLAGGED' && (
+                            <>
+                              <DropdownMenuItem onClick={() => quickSetStatus(p.id, 'ACTIVE')} disabled={settingStatus}>
+                                <CheckCircle className="w-4 h-4 mr-2 text-green-600" />Clear Flag (mark Active)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => quickSetStatus(p.id, 'REMOVED')} disabled={settingStatus} className="text-red-600">
+                                <EyeOff className="w-4 h-4 mr-2" />Soft-Remove
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {p.status === 'REMOVED' && (
+                            <DropdownMenuItem onClick={() => quickSetStatus(p.id, 'ACTIVE')} disabled={settingStatus}>
+                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" />Restore (mark Active)
+                            </DropdownMenuItem>
+                          )}
+
                           <DropdownMenuItem onClick={() => openDelete(p)} className="text-red-600">
-                            <Trash2 className="w-4 h-4 mr-2" />Delete
+                            <Trash2 className="w-4 h-4 mr-2" />Hard Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
