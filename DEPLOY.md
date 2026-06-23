@@ -1,217 +1,282 @@
-# Deployment Guide — CCC Admin Panel
+# CCC Admin Panel — Deployment Guide
 
-This document covers deploying both:
-- **Backend**: `ccc-webservices` (Node.js + Express + Prisma + MySQL)
-- **Frontend**: `ccc-admin-application` (Next.js 15 + RTK Query)
+**Project Name:** Culture Currency Connection (CCC) — Admin Panel
+**Repos:**
+- Frontend: `ccc-admin-application`
+- Backend: `ccc-webservices` (already deployed at `https://api.culturecurrencyconnection.com`)
 
-The same production MySQL database is shared with the mobile app.
+**Audience:** DevOps / deployment engineer
+**Reads from:** the same MySQL DB used by the mobile app — do NOT recreate or re-seed.
 
 ---
 
-## 🔴 Must-do before going live
+## Section 1 — Required third-party services / credentials
 
-### 1. Code-side cleanup
+For the admin panel **alone**, you need:
 
-| Task | Where | What |
+| # | Service / Resource | Purpose | Where it goes |
+|---|---|---|---|
+| 1 | **EC2 / VPS instance (Linux)** | Hosts the Next.js admin panel | New instance, separate from backend |
+| 2 | **Domain + subdomain** (e.g. `admin.culturecurrencyconnection.com`) | Public URL for admins | DNS A record → admin EC2 IP |
+| 3 | **SSL certificate** (Let's Encrypt) | HTTPS for the admin domain | nginx (or Cloudflare proxy) |
+
+For the backend (already deployed) one config change is needed — see Section 5.
+
+**No new third-party services needed.** The admin panel reuses everything the backend + mobile app already use (MySQL, S3, Firebase, Stripe, etc.).
+
+---
+
+## Section 2 — Stack & system requirements
+
+### Admin panel server
+
+| | Value |
+|---|---|
+| **Framework** | Next.js 15.5.19 (App Router) + React 18.3 + TypeScript |
+| **Node.js** | ≥18.17 (recommend 20 LTS) |
+| **Package manager** | yarn |
+| **OS** | Ubuntu 22.04 LTS or any modern Linux |
+| **RAM** | Minimum 1 GB, recommended 2 GB |
+| **Disk** | Minimum 5 GB free (node_modules + .next ≈ 1.5 GB) |
+| **Internal port** | 3000 (Next.js default) — DO NOT expose publicly |
+| **Public ports** | 80 (HTTP redirect), 443 (HTTPS) inbound only |
+| **Reverse proxy** | nginx (recommended) or Caddy |
+
+### Backend server (already deployed — no change to stack)
+
+| | Value |
+|---|---|
+| **Framework** | Node.js + Express 4 + Prisma 5 |
+| **Database** | MySQL (AWS RDS) — schema already migrated |
+| **Internal port** | 8089 |
+| **Public URL** | `https://api.culturecurrencyconnection.com` |
+
+---
+
+## Section 3 — Environment variables (purpose of each)
+
+### 3.1 — Admin panel (`ccc-admin-application/.env.production`)
+
+| Variable | Purpose | Example |
 |---|---|---|
-| Remove dev login prefill | `src/app/(auth)/login/page.tsx` lines 23-24 | Change defaults from `'admin@ro.com'` / `'Test1234!'` back to empty strings |
-| Delete any test seed rows | DB | See "Cleanup test data" section below |
-| Commit + push both repos | `ccc-webservices` and `ccc-admin-application` | `git add . && git commit -m "deploy" && git push` |
+| `NEXT_PUBLIC_API_URL` | Base URL the admin panel calls for ALL API requests. Must include `/api/v1` suffix. Baked into the JS bundle at build time. | `https://api.culturecurrencyconnection.com/api/v1` |
 
-### 2. Backend `.env` (production server)
+That's it for the admin panel — only one env var. **No secrets in the admin panel** (all `NEXT_PUBLIC_*` values are visible to anyone who opens DevTools).
 
-```env
-# CRITICAL — change these from placeholder/dev values
-JWT_SECRET_KEY=<strong-64-char-random-string>
-CORS_ALLOWED_ORIGINS=https://admin.yourcompany.com
+### 3.2 — Backend (`ccc-webservices/.env`) — one update needed
 
-# Existing — verify these match production
-DATABASE_URL=mysql://user:pass@host:3306/ccc
-PORT=8089
-BUCKET_NAME=ccc-backend
-BUCKET_REGION=us-east-2
-ACCESS_KEY_ID=...
-SECRET_ACCESS_KEY=...
-S3_ACCESS_URL=https://ccc-backend.s3.us-east-2.amazonaws.com
-STRIPE_SECRET_KEY=...
-GMAIL_ACCOUNT_EMAIL=...
-NEWS_RAPID_API=...
-```
+The backend `.env` already exists on the server. You only need to ADD or UPDATE these two lines:
 
-Generate a strong JWT secret:
+| Variable | Purpose | Value to set |
+|---|---|---|
+| `CORS_ALLOWED_ORIGINS` | Comma-separated list of origins allowed to call the API with credentials. Without this, browsers block the admin panel. Defaults to `*` (open) if unset — must be locked down for production. | `https://admin.culturecurrencyconnection.com` |
+| `JWT_SECRET_KEY` | Signing secret for JWTs. Must be a long random string. Currently set to the literal placeholder `"JWT_SECRET_KEY"` — MUST be rotated before going public. | A 64-char hex string. Generate with: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
+
+⚠️ **Rotating `JWT_SECRET_KEY` invalidates every active mobile app session.** Users will be force-logged-out. Coordinate timing with the mobile team / customer support before doing this.
+
+### 3.3 — All other backend variables (already set, no change needed)
+
+For reference, the backend `.env` also contains:
+
+| Variable | Purpose |
+|---|---|
+| `BACKEND_DOMAIN` | Backend's own public URL (used for callbacks) |
+| `FRONTEND_DOMAIN` | Currently empty — not used |
+| `PORT` | Backend listens on this port (8089) |
+| `DATABASE_URL` | MySQL connection string |
+| `COLLEGESCORECARD_SECRECT` | College Scorecard API key (US education data) |
+| `RAPID_API_SECRET` | RapidAPI key (used for some external lookups) |
+| `YELP_KEY` | Yelp API key (business data enrichment) |
+| `PLATFORM_CHARGES` | Stripe platform fee percentage (0.2 = 20%) |
+| `BUCKET_NAME`, `S3_ACCESS_URL` | S3 config for media uploads |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK` | Stripe payment processing |
+| `FIREBASE_AUTH` | Path to Firebase service account JSON for FCM |
+| `GMAIL_ACCOUNT_EMAIL`, `GMAIL_ACCOUNT_PASSWORD` | SMTP credentials for system emails (OTP, password reset, notifications) |
+| `OPEN_AI_MISTRAL_KEY`, `OPEN_AI_URL`, `OPENROUTER_API_URL` | LLM API for chat-bot feature |
+| `AWS_LAMBDA_PREFERENCE` | ARN of Lambda triggered for user preference updates |
+| `NEWS_RAPID_API` | RapidAPI key for news article fetching (mobile home feed) |
+| `GOOGLE_API_KEY` | Google Maps Geocoding / Places API |
+| `SQS_QUEUE_URL`, `SQS_PERSONA_URL` | SQS queues for async location updates and persona analysis |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_TLS` | Redis cache config (currently optional) |
+| `PREFERENCE_WEIGHT` | Matching algorithm tuning constant |
+
+---
+
+## Section 4 — Deployment steps (admin panel)
+
+### Step 1 — Spin up server + install runtime
+
 ```bash
-node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+# On Ubuntu 22.04 EC2
+sudo apt update
+sudo apt install -y curl git build-essential nginx
+
+# Install Node.js 20 LTS via NodeSource
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Verify
+node --version    # should be v20.x
+npm --version
+
+# Install yarn + PM2 globally
+sudo npm install -g yarn pm2
 ```
 
-> ⚠️ **Rotating `JWT_SECRET_KEY` invalidates every existing mobile app session** — all users must re-login. Coordinate with the mobile team / customer support before deploy.
+### Step 2 — Clone repo + install dependencies
 
-> ⚠️ `CORS_ALLOWED_ORIGINS` is a comma-separated list. **No trailing slash. Include `https://` prefix.** Without your admin domain here, the admin panel can't talk to the backend.
-
-### 3. Frontend `.env.local` (build time)
-
-```env
-NEXT_PUBLIC_API_URL=https://api.yourcompany.com/api/v1
-```
-
-Note the `/api/v1` suffix — the frontend appends paths like `/admin/auth/login` to this.
-
-### 4. Process manager for backend
-
-**Option A — PM2 (simplest):**
 ```bash
-npm install -g pm2
-cd ccc-webservices
-yarn install --production
-pm2 start src/server.js --name ccc-api
+cd /var/www                                                 # or wherever you host apps
+sudo git clone <repo-url> ccc-admin-application
+sudo chown -R $USER:$USER ccc-admin-application
+cd ccc-admin-application
+yarn install
+```
+
+### Step 3 — Configure environment
+
+The repo already contains `.env.production` with:
+
+```
+NEXT_PUBLIC_API_URL=https://api.culturecurrencyconnection.com/api/v1
+```
+
+If your backend domain is different, edit this file before building.
+
+### Step 4 — Build for production
+
+```bash
+yarn build       # creates .next/ folder (takes 30-60s)
+```
+
+### Step 5 — Run with PM2
+
+```bash
+pm2 start "yarn start" --name ccc-admin
 pm2 save
-pm2 startup   # follow the printed command so it restarts on server reboot
+pm2 startup      # follow the printed command to enable auto-start on reboot
 ```
 
-**Option B — Docker:** Write a `Dockerfile`, build, deploy through your normal container pipeline.
+Check it's listening on port 3000:
+```bash
+curl http://localhost:3000     # should return HTML
+pm2 status                      # ccc-admin should be 'online'
+```
 
-**Option C — systemd:** Create a unit file at `/etc/systemd/system/ccc-api.service`.
+### Step 6 — nginx reverse proxy + HTTPS
 
-### 5. HTTPS / reverse proxy
+Create `/etc/nginx/sites-available/ccc-admin`:
 
-Backend listens on `:8089` HTTP. **Don't expose that port publicly.**
-Put nginx, Caddy, or Cloudflare in front for TLS termination.
-
-Example nginx:
 ```nginx
 server {
-    server_name api.yourcompany.com;
+    listen 80;
+    server_name admin.culturecurrencyconnection.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
     listen 443 ssl http2;
-    # ... ssl certs (Let's Encrypt via certbot) ...
+    server_name admin.culturecurrencyconnection.com;
+
+    # SSL certs added by certbot below
+
+    client_max_body_size 25M;     # for any future file uploads
 
     location / {
-        proxy_pass http://localhost:8089;
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_cache_bypass $http_upgrade;
     }
 }
 ```
 
-### 6. Frontend hosting
-
-| Platform | Effort | Notes |
-|---|---|---|
-| **Vercel** | 5 min — `vercel deploy` | Easiest. Made by Next.js team. Free tier covers low traffic. |
-| **Netlify** | 5 min | Similar to Vercel. |
-| **Your own server** (PM2 + nginx) | 30 min | Run `yarn build` then `yarn start` (Next.js production server). |
-
-> ⚠️ **Static export will NOT work** — the app uses dynamic routes and server features. You need a Node-capable host.
-
----
-
-## 🟠 Should-do for safety
-
-| Task | Effort | Why |
-|---|---|---|
-| **Database backups** | 1 hour setup | AWS RDS automated backups — verify enabled, retain ≥7 days. |
-| **Error monitoring (Sentry)** | 1 hour | Free tier. Know about errors before users complain. |
-| **Uptime monitoring** | 5 min | UptimeRobot free → pings `/api/v1/` every 5 min, emails on outage. |
-| **Audit log destination** | 5 min | Backend writes to `logs/audit.log` (rotates at 10MB, 10 files). For long-term audit, pipe to CloudWatch or DB. |
-| **Promote SUPER_ADMIN(s)** | SQL | Decide who gets the highest tier. See "Admin user setup" below. |
-| **Test password reset flow** | 5 min | Verify existing admins know their passwords or can reset them. |
-
----
-
-## 🟡 Nice-to-have (post-launch)
-
-| Task | When |
-|---|---|
-| CI/CD pipeline (GitHub Actions) | Once you have 2+ deploys/week |
-| Staging environment | Before any major feature rollout |
-| httpOnly cookie auth (replace localStorage) | Q2 hardening |
-| Redis cache (Dashboard speed) | If Dashboard load > 2s annoys users |
-| Automated tests | Add per bug-fix |
-| Audit log → DB table | When you need queryable audit (compliance) |
-| Polygon zone editor (Google Maps drawing widget) | Geofencing v2 |
-| User Analytics event-tracking SDK | Implement Firebase Analytics in mobile, add backend ingest |
-
----
-
-## 🚀 First-deploy runbook
-
-Run in this exact order:
-
+Enable + reload:
 ```bash
-# ── 1. On your dev machine — commit + push ──
-cd ccc-webservices
-git add . && git commit -m "deploy: schema migrations + admin features" && git push
-
-cd ../ccc-admin-application
-git add . && git commit -m "deploy: admin panel v1" && git push
-
-
-# ── 2. SSH to backend server ──
-ssh user@api.yourcompany.com
-cd /var/www/ccc-webservices       # or wherever
-git pull
-yarn install --production
-
-# Edit .env with prod values (JWT_SECRET_KEY, CORS_ALLOWED_ORIGINS, etc.)
-nano .env
-
-# Migrations were already applied to the live DB during development.
-# If deploying to a fresh DB, run them now:
-#   npx prisma db execute --schema src/api/v1/prisma/schema.prisma --file src/api/v1/prisma/migrations/20260615152231_admin_panel_features/migration.sql
-#   ... (repeat for each migration in chronological order)
-
-pm2 restart ccc-api || pm2 start src/server.js --name ccc-api
-pm2 save
-
-
-# ── 3. Smoke test backend ──
-curl https://api.yourcompany.com/api/v1/
-# Expect: "server working of v1 router -- CCC"
-
-
-# ── 4. Deploy frontend ──
-# Vercel:
-cd ccc-admin-application
-vercel --prod
-
-# OR self-hosting:
-ssh user@admin.yourcompany.com
-cd /var/www/ccc-admin-application
-git pull
-yarn install
-yarn build
-pm2 restart ccc-admin || pm2 start "yarn start" --name ccc-admin
-
-
-# ── 5. Smoke test frontend ──
-# Open https://admin.yourcompany.com/login in a real browser (Chrome/Firefox,
-# NOT VS Code embedded preview — that blocks localStorage).
-# Log in → confirm no console errors → click through each sidebar page.
-
-
-# ── 6. Tell mobile team (if JWT secret was rotated) ──
-# All mobile users will see "Session expired" and must re-login.
-# Push a support / in-app notice if needed.
+sudo ln -s /etc/nginx/sites-available/ccc-admin /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
+Get SSL cert (Let's Encrypt):
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d admin.culturecurrencyconnection.com
+```
+
+### Step 7 — DNS
+
+Add an A record:
+```
+admin.culturecurrencyconnection.com  →  <admin EC2 public IP>
+```
+
+Wait for propagation (usually 1-5 min).
+
 ---
 
-## Admin user setup
+## Section 5 — Backend update (one-time, after admin panel deploy)
 
-After first deploy, you need at least one SUPER_ADMIN. The first one must be created via DB (no signup endpoint).
+SSH to the backend server (`api.culturecurrencyconnection.com`):
 
-### Create the first SUPER_ADMIN
 ```bash
-cd ccc-webservices
+cd /path/to/ccc-webservices
+nano .env
+```
+
+Add/update these two lines:
+
+```bash
+CORS_ALLOWED_ORIGINS=https://admin.culturecurrencyconnection.com
+JWT_SECRET_KEY=<generate with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))">
+```
+
+Restart:
+```bash
+pm2 restart ccc-api      # or: systemctl restart ccc-api / docker compose restart api
+```
+
+⚠️ Confirm with mobile team BEFORE rotating `JWT_SECRET_KEY` — it logs out all mobile users.
+
+---
+
+## Section 6 — Post-deploy verification
+
+### 6.1 — Smoke test
+
+1. Open `https://admin.culturecurrencyconnection.com/login` in **Chrome or full Edge** (NOT VS Code embedded preview — it blocks localStorage)
+2. Log in with the SUPER_ADMIN account
+3. Confirm Dashboard loads with real numbers
+4. Click through 3-5 sidebar pages → no console errors in DevTools
+5. Click "API Docs" link in the header → Swagger UI opens at `https://api.culturecurrencyconnection.com/api/v1/docs`
+
+### 6.2 — Health endpoints
+
+| URL | Expected |
+|---|---|
+| `https://admin.culturecurrencyconnection.com/login` | HTML page loads |
+| `https://api.culturecurrencyconnection.com/api/v1/` | `200 OK` text body `"server working of v1 router -- CCC"` |
+| `https://api.culturecurrencyconnection.com/api/v1/docs` | Swagger UI loads |
+
+### 6.3 — Create the first SUPER_ADMIN
+
+If the production DB doesn't have an admin user yet, run this ONCE on the backend server:
+
+```bash
+cd /path/to/ccc-webservices
 node -e "
 const bcrypt = require('bcrypt');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 (async () => {
-  const email = 'you@yourcompany.com';      // ← CHANGE
-  const password = 'PickAStrongOne!';        // ← CHANGE
-  const full_name = 'Your Name';             // ← CHANGE
-
+  const email = 'admin@culturecurrencyconnection.com';   // ← change
+  const password = 'PickAStrongOne!';                     // ← change
+  const full_name = 'Admin User';                         // ← change
   const hash = await bcrypt.hash(password, 10);
   const user = await prisma.users.create({
     data: {
@@ -229,118 +294,86 @@ const prisma = new PrismaClient();
 "
 ```
 
-> ⚠️ The admin login uses a different hash format than mobile users. Admin login hashes JUST `password`, mobile login hashes `password + email`. The script above is for **admin** accounts.
-
-### Promote an existing user to SUPER_ADMIN
-```sql
-UPDATE users SET admin_role='SUPER_ADMIN' WHERE email='someone@yourcompany.com';
-```
-
-### Subsequent admins
-Once a SUPER_ADMIN is logged in, they can create more admins via the **Admin Management** page in the admin panel.
+Note: Admin login hashes `password` only. Mobile login hashes `password + email`. Different paths — admin script above is correct for admin login.
 
 ---
 
-## Role tiers
+## Section 7 — Updates after deployment (URLs to configure)
 
-The admin panel has 3 tiers (enforced server-side):
-
-| Role | Can do |
-|---|---|
-| **SUPER_ADMIN** | Everything. Including managing other admins (create, edit role, delete). |
-| **ADMIN** | Moderate users/businesses/posts/communities/ads/jobs. Approve claims. Broadcast notifications. Cannot manage other admins. |
-| **MODERATOR** | Read-only + soft moderation (flag, mark reviewed). Cannot suspend/delete. |
-
-Existing admins all default to `ADMIN` tier (safe default — they keep working without being able to touch other admin accounts).
-
----
-
-## Cleanup test data
-
-If you have leftover test rows from development:
-
-```sql
--- Remove fake PENDING business submissions
-DELETE FROM business_information
-WHERE review_status='PENDING'
-  AND name LIKE '%Test Pending%' OR name LIKE '%Sample Pending%' OR name LIKE '%Demo Pending%';
-
--- Remove fake PENDING communities
-DELETE FROM community
-WHERE status='PENDING'
-  AND (community_name LIKE '%Test Pending%' OR community_name LIKE '%Sample Pending%');
-
--- Remove the demo news article (if not used)
-DELETE FROM news_article
-WHERE title LIKE 'CCC Welcomes Diverse Healthcare%';
-```
-
----
-
-## Health checks
-
-| Endpoint | Expected | Purpose |
+| What | Where | Set to |
 |---|---|---|
-| `GET https://api.yourcompany.com/api/v1/` | `200 OK` body `"server working of v1 router -- CCC"` | Uptime monitor target |
-| `GET https://api.yourcompany.com/api/v1/docs` | Swagger UI loads | API docs reachable |
-| `POST https://api.yourcompany.com/api/v1/admin/auth/login` (with valid creds) | `200 OK` with `access_token` | Auth working |
+| Admin panel `NEXT_PUBLIC_API_URL` | `.env.production` in admin repo (or platform env var) | `https://api.culturecurrencyconnection.com/api/v1` |
+| Backend `CORS_ALLOWED_ORIGINS` | `.env` on backend server | `https://admin.culturecurrencyconnection.com` |
+| Backend `JWT_SECRET_KEY` | `.env` on backend server | strong random string |
+| DNS A record | DNS provider | admin domain → EC2 IP |
 
 ---
 
-## Top 3 things people forget
+## Section 8 — Common operations
 
-1. **JWT_SECRET_KEY rotation logs out every mobile user.** Coordinate timing or accept the support spike.
-2. **`CORS_ALLOWED_ORIGINS` without your domain = admin panel can't talk to backend.** No trailing slash. Include `https://`.
-3. **Backend on prod still runs OLD code until you deploy.** Migrations are applied to the DB, but admin features return 404 until backend is updated.
-
----
-
-## Rolling back
-
-If something goes wrong:
-
+### Restart admin panel after code update
 ```bash
-# Backend
-cd ccc-webservices
-git revert HEAD                    # OR git reset --hard <previous-commit>
-git push
+cd /var/www/ccc-admin-application
+git pull
+yarn install              # if any new deps
+yarn build                # rebuild
+pm2 restart ccc-admin
+```
+
+### View admin panel logs
+```bash
+pm2 logs ccc-admin --lines 100
+```
+
+### Restart backend after .env change
+```bash
 pm2 restart ccc-api
+```
 
-# Frontend (Vercel)
-vercel rollback                    # rolls back to previous deployment
-
-# Schema changes (additive only)
-# All our migrations were ADDITIVE — adding columns/tables. They don't break old code.
-# Old backend code ignores new columns. No rollback needed for schema.
-# If you really need to remove the columns, see each migration's README for the DROP statements.
+### Roll back admin panel to previous commit
+```bash
+cd /var/www/ccc-admin-application
+git log --oneline -5            # find the previous commit
+git reset --hard <commit-hash>
+yarn install && yarn build
+pm2 restart ccc-admin
 ```
 
 ---
 
-## What we added (summary for context)
+## Section 9 — Top 3 gotchas
 
-**5 schema migrations** (already applied to prod DB during development):
-1. `20260615152231_admin_panel_features` — admin roles, community/post/report status, jobs SUSPENDED
-2. `20260616153100_news_articles` — `news_article` table
-3. `20260617090500_geofence_zones` — `geofence_zone` table
-4. `20260618070000_business_review_workflow` — `business_information.review_status`
-5. `20260618210000_news_article_content` — `news_article.content` rich body
+1. **`CORS_ALLOWED_ORIGINS` without `https://` prefix or with trailing slash = admin can't talk to backend.** Browser DevTools console will scream "CORS error" on every request.
 
-**9 admin features:**
-- Community approval workflow
-- Admin role tiers (SUPER_ADMIN / ADMIN / MODERATOR)
-- Reports moderation (status, severity, admin notes, action taken)
-- Posts soft-remove + flag
-- Jobs SUSPENDED state
-- Chat warn / admin-block
-- Geofence zones (define + spatial query + broadcast)
-- News articles (full CRUD + merged into mobile feed)
-- Business Claims (review of mobile business signups)
+2. **Rotating `JWT_SECRET_KEY` logs out every mobile user.** They'll need to re-login. Coordinate with the mobile team beforehand.
 
-**Security hardening:**
-- Helmet security headers
-- Rate limiting (300/min general, 10/15min on auth)
-- File-based audit log (`logs/audit.log`)
-- Auto-refresh on 401
-- CORS env-driven
-- Next.js 15.5.19 (zero vulnerabilities — `yarn audit` clean)
+3. **VS Code's embedded Simple Browser blocks localStorage.** Login appears to fail silently — no network requests fire. Always test in a real Chrome/Edge window.
+
+---
+
+## Section 10 — Estimated deployment time
+
+| Step | Time |
+|---|---|
+| Section 4 (EC2 setup + nginx + Let's Encrypt + DNS) | ~1 hour |
+| Section 5 (backend `.env` update) | 5 min |
+| Section 6 (smoke test + create admin) | 15 min |
+| **Total** | **~1.5 hours** |
+
+---
+
+## Section 11 — Quick reference
+
+- **Admin panel codebase guide:** [`CLAUDE.md`](./CLAUDE.md)
+- **Live API docs (after backend deploy):** `https://api.culturecurrencyconnection.com/api/v1/docs`
+- **Mobile app does NOT need any change** — all admin-side filtering happens server-side
+- **5 schema migrations** were applied during development; production DB is already migrated. If deploying to a fresh DB, see `ccc-webservices/src/api/v1/prisma/migrations/`.
+
+---
+
+## Contact
+
+For questions during deployment, contact the dev team in the project group with:
+- Section number you're stuck on
+- Exact error message (screenshot or copy-paste)
+- Output of `pm2 logs` (last 50 lines)
