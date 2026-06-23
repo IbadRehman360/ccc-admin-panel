@@ -18,10 +18,8 @@ export default function LoginPage() {
   const [login, { isLoading }] = useLoginMutation();
 
   const [showPassword, setShowPassword] = useState(false);
-  // Dev-only prefill: in production these should be empty.
-  // Remove or guard with NODE_ENV before deploy.
-  const [email, setEmail] = useState('admin@ro.com');
-  const [password, setPassword] = useState('Test1234!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

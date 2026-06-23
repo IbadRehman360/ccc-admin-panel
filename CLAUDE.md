@@ -1,18 +1,21 @@
-# CCC Admin Panel — Frontend & Backend Integration Guide
+# CCC Admin Panel — Codebase Guide
 
-This document describes the **actual** state of the admin panel implementation as of the current commit. For interactive Swagger docs of every endpoint, see `http://localhost:8089/api/v1/docs` (linked from the admin panel header → "API Docs").
+The admin moderation/management UI for Culture Currency Connection. Paired with the `ccc-webservices` backend and consumes the same MySQL DB as the mobile app.
+
+For deployment instructions see [`DEPLOY.md`](./DEPLOY.md).
+For interactive API docs (when backend is running) see `http://localhost:8089/api/v1/docs`.
 
 ---
 
 ## Stack
 
 ### Frontend (this repo: `ccc-admin-application`)
-- **Framework**: Next.js 14.2.35 (App Router), React 18.3, TypeScript
+- **Framework**: Next.js 15.5.19 (App Router), React 18.3, TypeScript
 - **State / API**: Redux Toolkit + RTK Query (`@reduxjs/toolkit` 2.x)
 - **UI**: shadcn/ui + Radix UI + Tailwind CSS v4
 - **Charts**: Recharts 2.15
 - **Icons**: Lucide React
-- **Auth**: JWT in `localStorage`, auto-refresh on 401
+- **Auth**: JWT in `localStorage`, auto-refresh on 401, safe fallback to in-memory storage if localStorage blocked
 - **Colors**: Primary `#195440` (dark green), Accent `#E1B047` (gold)
 
 ### Backend (sibling repo: `ccc-webservices`)
@@ -22,7 +25,9 @@ This document describes the **actual** state of the admin panel implementation a
 - **Docs**: Swagger UI at `/api/v1/docs` (swagger-jsdoc + swagger-ui-express)
 - **Notifications**: Firebase Admin SDK (FCM)
 - **Storage**: AWS S3 (media files)
-- **DB**: MySQL on AWS RDS
+- **DB**: MySQL on AWS RDS (shared with mobile app)
+- **Security**: helmet + rate limiting + audit log + CORS env-driven
+- **Vulnerabilities**: `yarn audit` clean (0 found)
 
 ---
 
@@ -42,39 +47,45 @@ POST   /api/v1/admin/auth/logout     body: { refresh_token }
 3. All subsequent requests send `Authorization: <access_token>` (raw, no `Bearer ` prefix)
 4. On 401, RTK Query auto-tries `/refresh` with the refresh token; if that fails, redirects to `/login`
 
-### Authorization
-- Backend middleware: `verify_token` (validates JWT, loads user) + `user_type_check("ADMIN")` (must have `user_type='ADMIN'`)
-- Role tiers (Super Admin / Admin / Moderator) are **not implemented** — schema only has `user_type` enum (`USER`, `BUSINESS`, `ADMIN`)
+### Authorization — Role Tiers
+3-tier system enforced server-side via `admin_role_check` middleware:
 
-### Creating an admin
-There is no signup endpoint. To create the first admin, run in the backend repo:
-```bash
-node -e "
-const bcrypt = require('bcrypt');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-(async () => {
-  const hash = await bcrypt.hash('YourPassword', 10);
-  await prisma.users.create({
-    data: {
-      email: 'admin@yourdomain.com',
-      user_type: 'ADMIN',
-      account_type: 'EMAIL',
-      is_email_verified: true,
-      user_secrets: { create: { password: hash, otp_expiration: new Date() } },
-      user_details: { create: { full_name: 'Your Name' } },
-    },
-  });
-})();
-"
-```
-Subsequent admins can be added via the **Admin Management** page once you're logged in.
+| Tier | Can do |
+|---|---|
+| **SUPER_ADMIN** | Everything. Including managing other admins (create, edit role, delete). |
+| **ADMIN** | Moderate users/businesses/posts/communities/ads/jobs. Approve claims. Broadcast notifications. **Cannot** manage other admins. |
+| **MODERATOR** | Read-only + soft moderation (flag, mark reviewed). Cannot suspend/delete. |
+
+### Creating the first SUPER_ADMIN
+No signup endpoint. Run this once on a fresh deploy (see `DEPLOY.md` for the full script).
+
+Subsequent admins are created via the **Admin Management** page once you're logged in as SUPER_ADMIN.
 
 ---
 
-## All admin endpoints
+## Sidebar pages (18 wired + 1 stub)
 
-Every endpoint listed below is under the `/api/v1/admin` prefix and requires `verify_token + user_type_check("ADMIN")` (except `/auth/login`, `/auth/refresh`, `/auth/logout`).
+| Page | Path | Backend route prefix | Status |
+|---|---|---|---|
+| Dashboard | `/dashboard` | `/admin/dashboard` | ✅ Live |
+| Admin Management | `/admin-management` | `/admin/admins` | ✅ Live (SUPER_ADMIN only for mutations) |
+| Pending Approvals | `/pending-approvals` | `/admin/approvals` | ✅ All 3 tabs: Ads / Business Claims / Community Approvals |
+| Users | `/user-management` | `/admin/users` | ✅ Live |
+| Businesses | `/business-management` | `/admin/businesses` | ✅ Live |
+| Promo Codes | `/promo-codes` | (n/a) | 🟡 Stub — needs schema migration + mobile UI for user-redeemable codes |
+| Communities | `/communities` | `/admin/communities` | ✅ Live, with Approve/Reject/Suspend |
+| Events | `/events` | `/admin/events` | ✅ Live |
+| Posts | `/posts` | `/admin/posts` | ✅ Live, with Flag/Soft-remove/Restore |
+| Chats | `/chats` | `/admin/chats` | ✅ Live, with per-participant Warn/Block |
+| Ads | `/ad-management` | (reuses `/admin/approvals/ads`) | ✅ 4-tab workflow |
+| Jobs | `/job-management` | `/admin/jobs` | ✅ Live, with Suspend |
+| Matching Engine | `/matching-engine` | `/admin/matching` | ✅ Live |
+| Geofencing | `/geofencing` | `/admin/geofencing` | ✅ Live, with Zones tab (define + broadcast) |
+| Notifications | `/notifications` | `/admin/notifications` | ✅ Live |
+| Reports | `/report-management` | `/admin/reports` | ✅ Live, with status/severity/notes moderation |
+| News | `/news` | `/admin/news` | ✅ Live, articles merged into mobile rapidapi feed |
+| System Settings | `/system-settings` | `/admin/settings` | ✅ Live (Terms / Privacy / About) |
+| User Analytics | `/user-analytics` | (reuses `/admin/dashboard/charts`) | ✅ Subset of Dashboard (retention/demographics need mobile event tracking) |
 
 All list endpoints return:
 ```json
@@ -88,197 +99,95 @@ All list endpoints return:
 }
 ```
 
-### Dashboard
-```
-GET  /admin/dashboard/stats
-GET  /admin/dashboard/charts
-```
-
-### Admin Management (`/admin-management`)
-```
-GET    /admin/admins/stats
-GET    /admin/admins?search=&status=&page=&limit=
-POST   /admin/admins                 body: { email, password, full_name }
-GET    /admin/admins/:id
-PATCH  /admin/admins/:id             body: { email?, full_name? }
-PATCH  /admin/admins/:id/status      body: { is_blocked }
-PATCH  /admin/admins/:id/reset-password  body: { new_password }
-DELETE /admin/admins/:id
-```
-
-### Pending Approvals (`/pending-approvals`)
-Ads tab is fully wired. Business Claims + Community Approvals tabs return `not_implemented: true` until schema migrations land.
-```
-GET    /admin/approvals/ads/stats
-GET    /admin/approvals/ads?status=&search=&page=&limit=
-GET    /admin/approvals/ads/:id
-PATCH  /admin/approvals/ads/:id/status   body: { status, reason? }
-GET    /admin/approvals/claims          (stub)
-GET    /admin/approvals/communities     (stub)
-```
-
-### User Management (`/user-management`)
-```
-GET    /admin/users/stats
-GET    /admin/users?search=&status=&completion=&page=&limit=
-GET    /admin/users/:id
-GET    /admin/users/:id/documents
-PATCH  /admin/users/:id/status        body: { is_blocked, reason? }
-DELETE /admin/users/:id               body: { reason }
-```
-
-### Business Management (`/business-management`)
-```
-GET    /admin/businesses/stats
-GET    /admin/businesses?search=&type=&status=&verified=&sort_by=&page=&limit=
-GET    /admin/businesses/:id
-GET    /admin/businesses/:id/documents
-PATCH  /admin/businesses/:id/verify   body: { approved, notes? }
-PATCH  /admin/businesses/:id/status   body: { is_blocked, reason? }
-DELETE /admin/businesses/:id          body: { reason }
-```
-
-### Communities (`/communities`)
-```
-GET    /admin/communities/stats
-GET    /admin/communities?search=&privacy=&sort_by=&page=&limit=
-GET    /admin/communities/:id
-DELETE /admin/communities/:id         body: { reason }
-```
-
-### Events (`/events`)
-```
-GET    /admin/events/stats
-GET    /admin/events?search=&privacy=&status=&sort_by=&page=&limit=
-GET    /admin/events/:id
-GET    /admin/events/:id/attendees
-PATCH  /admin/events/:id/cancel       body: { reason? }
-DELETE /admin/events/:id              body: { reason }
-```
-
-### Posts (`/posts`)
-```
-GET    /admin/posts/stats
-GET    /admin/posts?search=&community_id=&media=&sort_by=&page=&limit=
-GET    /admin/posts/:id
-DELETE /admin/posts/:id               body: { reason }
-```
-
-### Chats (`/chats`)
-```
-GET    /admin/chats/stats
-GET    /admin/chats?search=&status=&page=&limit=
-GET    /admin/chats/:id
-GET    /admin/chats/:id/messages?page=&limit=
-DELETE /admin/chats/:id               body: { reason }
-```
-
-### Ad Management (`/ad-management`)
-Reuses `/admin/approvals/ads/*` endpoints. The page splits ACCEPTED ads into "Active" vs "Upcoming" client-side based on `schedule.start`.
-
-### Jobs (`/job-management`)
-```
-GET    /admin/jobs/stats
-GET    /admin/jobs?search=&status=&type=&sort_by=&page=&limit=
-GET    /admin/jobs/:id
-GET    /admin/jobs/:id/applications
-PATCH  /admin/jobs/:id/status         body: { status: 'ACTIVE'|'CLOSED'|'PAST', reason? }
-DELETE /admin/jobs/:id                body: { reason }
-```
-
-### Matching Engine (`/matching-engine`)
-```
-GET    /admin/matching/stats
-GET    /admin/matching/users?search=&account_type=&preferences_set=&page=&limit=
-GET    /admin/matching/users/:id/preferences
-GET    /admin/matching/weights
-PUT    /admin/matching/weights        body: { weights: [{ question_id, weight }] }
-```
-Updating weights reloads the in-memory scorer immediately.
-
-### Geofencing (`/geofencing`)
-```
-GET    /admin/geofencing/stats
-GET    /admin/geofencing/top-locations?limit=10
-GET    /admin/geofencing/users?search=&account_type=&has_location=&city=&state=&page=&limit=
-```
-
-### Notifications (`/notifications`)
-```
-GET    /admin/notifications/stats
-GET    /admin/notifications?search=&screen_name=&is_admin=&page=&limit=
-POST   /admin/notifications/send      body: { title, message, recipients, specific_user_ids?, screen_name?, metadata? }
-DELETE /admin/notifications/:id
-```
-Broadcast iterates recipients in batches of 10, calls FCM for each, writes a `notifications` row, then marks all created rows with `is_admin=true`.
-
-### Reports (`/report-management`)
-```
-GET    /admin/reports/stats
-GET    /admin/reports?search=&reason=&page=&limit=
-GET    /admin/reports/:id
-DELETE /admin/reports/:id             body: { reason }    (resolving = deleting the row)
-```
-
-### System Settings (`/system-settings`)
-```
-GET    /admin/settings
-GET    /admin/settings/terms          PUT body: { content }
-GET    /admin/settings/privacy        PUT body: { content }
-GET    /admin/settings/about          PUT body: { content }
-```
-PUT upserts the latest row in each table.
+Every endpoint under `/admin/*` requires `verify_token + user_type_check("ADMIN")`. Sensitive mutations (e.g. all `/admin/admins/*` writes) additionally require `admin_role_check("SUPER_ADMIN")`.
 
 ---
 
-## Frontend structure
+## Schema migrations
 
-```
-src/
-├── app/
-│   ├── layout.tsx                    Root: wraps ReduxProvider
-│   ├── page.tsx                      Redirects to /login
-│   ├── (auth)/login/page.tsx
-│   └── (admin)/
-│       ├── layout.tsx                Sidebar + Header + AuthGate
-│       └── [18 page.tsx files]
-├── components/
-│   ├── layout/
-│   │   ├── AuthGate.tsx              Token check + /me hydration
-│   │   ├── Header.tsx                Admin name + API Docs + Logout
-│   │   ├── Sidebar.tsx
-│   │   └── UserAvatar.tsx            Initials on green badge
-│   └── ui/                           15 shadcn/ui components
-├── constants/navigation.ts
-├── hooks/use-mobile.ts
-├── lib/
-│   ├── api/client.ts                 axios + token storage helpers
-│   ├── format.ts                     Shared formatDate/extractError
-│   └── utils.ts                      cn()
-├── providers/ReduxProvider.tsx
-├── store/
-│   ├── index.ts                      configureStore
-│   ├── hooks.ts                      Typed useAppDispatch/useAppSelector
-│   ├── slices/authSlice.ts           Admin UI state
-│   └── api/
-│       ├── baseApi.ts                createApi + auto-refresh on 401
-│       ├── authApi.ts
-│       └── [14 feature slices]
-└── styles/globals.css
+5 migrations were applied to production DB (in `ccc-webservices/src/api/v1/prisma/migrations/`):
+
+1. **`20260615152231_admin_panel_features`** — admin roles, community/post/report status, jobs SUSPENDED
+2. **`20260616153100_news_articles`** — `news_article` table
+3. **`20260617090500_geofence_zones`** — `geofence_zone` table
+4. **`20260618070000_business_review_workflow`** — `business_information.review_status`
+5. **`20260618210000_news_article_content`** — `news_article.content` rich body
+
+All migrations are **additive and non-breaking** for the mobile app — existing data defaults to `APPROVED`/`ACTIVE`, so mobile listings continue unchanged.
+
+To apply on a fresh DB:
+```bash
+npx prisma db execute --schema src/api/v1/prisma/schema.prisma --file <each migration.sql in chronological order>
 ```
 
 ---
 
-## Backend structure (admin panel additions)
+## Mobile-side behaviour (what changed without mobile code changes)
+
+| Mobile endpoint | Before | After |
+|---|---|---|
+| `GET /external_api/get_news` | Pure rapidapi results | Admin-curated PUBLISHED articles prepended, rapidapi fills rest |
+| `GET /external_api/get_news_by_id` | Always scrapes URL | If URL matches an admin-curated article, serves DB row directly (no scraping) |
+| `POST /user/business_information` | Auto-approved | New submissions go to `review_status=PENDING`; admin must approve before they appear in mobile listings |
+| Business-listing endpoints (4 total: `/geofencing/filter`, `home_corporations`, `diversed_businesses`, `business_filters`) | Showed all businesses | Filter `WHERE review_status='APPROVED'` (or NULL for seeded users without a `business_information` row) |
+
+Mobile app required **zero code changes** — Dart's JSON parser ignores new fields, and removed/pending businesses just disappear server-side.
+
+---
+
+## Project structure
+
+```
+ccc-admin-application/
+├── public/                       # Static assets + favicon
+├── src/
+│   ├── app/                      # Next.js App Router
+│   │   ├── layout.tsx            # Root layout, ReduxProvider, favicon metadata
+│   │   ├── page.tsx              # Redirects to /login
+│   │   ├── (auth)/login/page.tsx
+│   │   └── (admin)/
+│   │       ├── layout.tsx        # Sidebar + Header + AuthGate
+│   │       └── 19 page.tsx files (1 per sidebar item)
+│   ├── components/
+│   │   ├── layout/               # AuthGate, Header, Sidebar, UserAvatar
+│   │   └── ui/                   # 15 shadcn/ui primitives
+│   ├── constants/navigation.ts
+│   ├── hooks/use-mobile.ts
+│   ├── lib/
+│   │   ├── api/client.ts         # axios + safe localStorage helpers
+│   │   ├── format.ts             # Shared formatDate / formatDateTime / extractError
+│   │   └── utils.ts              # cn() class merger
+│   ├── providers/ReduxProvider.tsx
+│   ├── store/
+│   │   ├── index.ts              # configureStore
+│   │   ├── hooks.ts              # Typed useAppDispatch/useAppSelector
+│   │   ├── slices/authSlice.ts
+│   │   └── api/
+│   │       ├── baseApi.ts        # createApi + auto-refresh on 401
+│   │       ├── authApi.ts
+│   │       └── 16 feature slices (admins, users, businesses, news, geofencing, etc.)
+│   └── styles/globals.css
+├── .env.local                    # local dev (gitignored)
+├── .env.production               # prod URL (committed; safe — NEXT_PUBLIC_* is client-visible)
+├── CLAUDE.md                     # ← you are here
+├── DEPLOY.md                     # Deployment runbook
+├── next.config.mjs               # Security headers + image domains
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## Backend project structure (in sibling repo `ccc-webservices`)
 
 ```
 src/api/v1/
 ├── routers/admin/
-│   ├── index.js                      Mounts 16 sub-routers + audit_log middleware
+│   ├── index.js                  # Mounts 17 sub-routers + rate limit + audit log
 │   ├── auth/
 │   ├── dashboard/
-│   ├── admins/
-│   ├── approvals/
+│   ├── admins/                   # SUPER_ADMIN required for mutations
+│   ├── approvals/                # Ads + Business Claims + Community Approvals
 │   ├── users/
 │   ├── businesses/
 │   ├── communities/
@@ -287,36 +196,41 @@ src/api/v1/
 │   ├── chats/
 │   ├── jobs/
 │   ├── matching/
-│   ├── geofencing/
+│   ├── geofencing/               # Includes /zones endpoints
 │   ├── notifications/
 │   ├── reports/
-│   └── settings/
-├── controllers/admin/[16 subfolders]
-├── services/admin/[16 subfolders]
-├── validations/admin/[16 subfolders]
+│   ├── settings/
+│   └── news/
+├── controllers/admin/[17 subfolders]
+├── services/admin/[17 subfolders]
+├── validations/admin/[17 subfolders]
 ├── dto/admin/[*.dto.js per feature]
 ├── middlewares/
-│   └── audit_log.middleware.js       Captures mutations → logs/audit.log
+│   ├── audit_log.middleware.js   # Captures every mutation → logs/audit.log
+│   ├── rate_limit.middleware.js  # 10/15min auth, 300/min general
+│   └── admin_role_check.middleware.js
 └── swagger/
-    ├── index.js                      Serves /api/v1/docs
-    └── admin/[16 *.js spec files]
+    ├── index.js                  # Serves /api/v1/docs
+    └── admin/[17 *.js spec files]
 ```
 
 ---
 
 ## Environment variables
 
-### Frontend (`.env.local`)
+### Frontend `.env.local` (dev) / `.env.production` (prod)
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8089/api/v1
+NEXT_PUBLIC_API_URL=https://api.culturecurrencyconnection.com/api/v1
 ```
 
-### Backend (`.env`)
+### Backend `.env`
 ```
 DATABASE_URL=mysql://user:pass@host:3306/ccc
 PORT=8089
+
 JWT_SECRET_KEY=<strong random secret — DO NOT use default placeholder>
-CORS_ALLOWED_ORIGINS=http://localhost:3000,https://admin.ccc.com   # optional, defaults to *
+CORS_ALLOWED_ORIGINS=https://admin.culturecurrencyconnection.com    # optional, defaults to *
+
 GMAIL_ACCOUNT_EMAIL=...
 BUCKET_NAME=ccc-backend
 BUCKET_REGION=us-east-2
@@ -324,20 +238,92 @@ ACCESS_KEY_ID=...
 SECRET_ACCESS_KEY=...
 S3_ACCESS_URL=https://ccc-backend.s3.us-east-2.amazonaws.com
 STRIPE_SECRET_KEY=...
+NEWS_RAPID_API=...
 ```
 
 ---
 
-## Audit log
+## Security hardening
 
-All admin mutations (POST/PATCH/PUT/DELETE) are logged to `logs/audit.log` as JSON Lines:
-```json
-{"level":"info","admin_id":"...","admin_email":"...","method":"PATCH","url":"/api/v1/admin/users/.../status","target_id":"...","reason":"Spam","status_code":200,"success":true,"timestamp":"..."}
-```
-Rotates at 10MB, keeps the last 10. **Production should swap this for a DB-backed `audit_log` table** for queryability — see middleware source.
+| Layer | Implementation |
+|---|---|
+| **JWT** | 7-day access tokens, 14-day refresh, auto-rotated on 401 |
+| **Audit log** | Every admin mutation (POST/PATCH/PUT/DELETE) → `logs/audit.log` JSON lines, rotates at 10MB, keeps 10 |
+| **Rate limiting** | Auth endpoints: 10 attempts / 15min / IP. General admin: 300 req/min / IP |
+| **CORS** | Env-driven via `CORS_ALLOWED_ORIGINS`; defaults to `*` for backwards-compat with mobile |
+| **Security headers** | Helmet on backend; Next.js sends X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, HSTS |
+| **Role enforcement** | Server-side `admin_role_check` middleware — no client-side bypass possible |
+| **Mobile session protection** | Mobile uses `bcrypt(password + email)`; admin uses `bcrypt(password)` — different hashes, can't cross-auth |
+| **Vulnerability scan** | `yarn audit` clean (0 vulnerabilities) |
 
 ---
 
-## Known limitations
+## What's NOT shipped (the only remaining blockers)
 
-See the development team for the complete list of features that require schema migrations (Promo Codes, Business Claims, Community Approvals, Reports status/severity, role tiers, etc.).
+Both need mobile-app work:
+
+1. **Promo Codes** — if user-redeemable, mobile needs "Enter promo code" UI at checkout. Skip if admin uses codes for tracking only.
+2. **User Analytics depth** — retention, age demographics, hourly activity need an analytics SDK in mobile (Firebase Analytics recommended — free + already linked via FCM).
+
+If client doesn't want either: the admin panel is feature-complete.
+
+---
+
+## Local development
+
+```bash
+# Backend (separate terminal)
+cd ../ccc-webservices
+yarn install
+yarn start         # http://localhost:8089
+
+# Frontend
+cd ccc-admin-application
+yarn install
+yarn dev           # http://localhost:3000
+
+# Open in a real browser (Chrome / full Edge), NOT VS Code embedded preview —
+# that blocks localStorage and login won't work.
+```
+
+Login with the SUPER_ADMIN account you created during first deploy.
+
+---
+
+## Production deploy
+
+See [`DEPLOY.md`](./DEPLOY.md) for the full runbook. Quick summary of remaining tasks:
+
+1. **Backend prod `.env`**: set strong `JWT_SECRET_KEY` + `CORS_ALLOWED_ORIGINS` (deploy invalidates all mobile sessions — coordinate with mobile team)
+2. **Push both repos** to git
+3. **Deploy backend** first (so endpoints exist before frontend hits them)
+4. **Deploy frontend** (`yarn build` + Vercel / your own server)
+5. **Smoke test** — log in, click through sidebar, verify no console errors
+
+---
+
+## Quick reference — backend admin endpoints
+
+| Feature | Endpoint(s) |
+|---|---|
+| Auth | `/admin/auth/{login,refresh,logout,me}` |
+| Dashboard | `/admin/dashboard/{stats,charts}` |
+| Admins | `/admin/admins/*` (SUPER_ADMIN for mutations) |
+| Ad approvals | `/admin/approvals/ads/*` |
+| Business claims | `/admin/approvals/claims/*` |
+| Community approvals | `/admin/approvals/communities` |
+| Users | `/admin/users/*` |
+| Businesses | `/admin/businesses/*` |
+| Communities | `/admin/communities/{*,:id/status}` |
+| Events | `/admin/events/*` |
+| Posts | `/admin/posts/{*,:id/status}` |
+| Chats | `/admin/chats/{*,warn,block,unblock}` |
+| Jobs | `/admin/jobs/*` |
+| Matching | `/admin/matching/{stats,users,weights}` |
+| Geofencing | `/admin/geofencing/{stats,users,top-locations,zones,zones/:id/users,zones/:id/broadcast}` |
+| Notifications | `/admin/notifications/{stats,*,send}` |
+| Reports | `/admin/reports/*` |
+| Settings | `/admin/settings/{terms,privacy,about}` |
+| News | `/admin/news/*` |
+
+Full interactive docs at `http://localhost:8089/api/v1/docs`.
