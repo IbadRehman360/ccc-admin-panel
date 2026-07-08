@@ -1,0 +1,63 @@
+name: Deploy admin dashboard
+
+# Manual-only: deploys run ONLY when triggered by hand
+# (Actions -> Deploy admin dashboard -> Run workflow, or `gh workflow run`).
+# A push never auto-deploys.
+on:
+  workflow_dispatch:
+
+# Never run two deploys at once; let an in-flight deploy finish.
+concurrency:
+  group: deploy-ccc-admin-dashboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Self-hosted runner registered to this repo (see Master Deployment Guide,
+    # Step 6.2 — same pattern as the other admin-dashboard runner setups).
+    runs-on: [self-hosted, admin-dashboard]
+    env:
+      # PM2 process name. Distinct from other apps' names on the same runner.
+      PM2_NAME: ccc-admin-panel
+      # Next.js listens on this port; Nginx reverse-proxies the subdomain to it.
+      # TODO: confirm this doesn't collide with other PM2 apps already running on the host.
+      PORT: "4001"
+      # Public client config (baked into the browser bundle at build time).
+      # Matches .env.production / CLAUDE.md. Not a secret.
+      NEXT_PUBLIC_API_URL: https://api.culturecurrencyconnection.com/api/v1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+          cache-dependency-path: "./yarn.lock"
+
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Construct Environment File
+        run: |
+          echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}" > .env.production.local
+
+      - name: Build Admin Panel Assets
+        run: yarn build
+
+      - name: Start or Reload PM2 Process
+        run: |
+          pm2 reload "$PM2_NAME" --update-env || pm2 start yarn --name "$PM2_NAME" -- start -- -p "$PORT"
+          pm2 save
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${PORT}/" || true)
+            # "/" is a server-side redirect() to /login, so a healthy app answers 307, not 200.
+            if [ "$code" = "200" ] || [ "$code" = "307" ]; then echo "admin dashboard up (HTTP $code)"; exit 0; fi
+            sleep 3
+          done
+          echo "health check failed"; pm2 logs "$PM2_NAME" --lines 60 --nostream; exit 1
